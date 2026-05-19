@@ -28,3 +28,6 @@ coverage/
 
 # Devin / planning artifacts (not committed to the repo as part of code changes)
 .devin-screenshots/
+
+# Local planning scratch (not committed)
+PLAN.md
