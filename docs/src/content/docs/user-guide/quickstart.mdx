@@ -1,0 +1,99 @@
+---
+title: User Quick Start
+description: End-to-end walkthrough — log in, create a Collection, attach STIGs, evaluate, export.
+---
+
+import { Steps, Aside } from '@astrojs/starlight/components'
+
+This walks through one full evaluation loop: log in, create a Collection,
+attach STIGs to an Asset, complete some Reviews, and export a CKL / POA&M.
+
+If your organisation already has Collections you've been added to, you can
+skip the Collection creation step.
+
+## Concepts in 30 seconds
+
+- **Collection** — top-level container. Mirrors an RMF Package, a Lab, or
+  whatever grouping makes sense for you.
+- **Asset** — anything you evaluate (server, image, network device). Belongs
+  to one Collection.
+- **STIG** — the canonical DISA checklist (a Benchmark + its Revisions).
+- **Review** — one per `(Asset, Rule)`. Carries result, detail, comment,
+  status, and history.
+- **Grant** — `(User-or-Group, Collection, Role)`. Controls visibility and
+  edit rights.
+
+## Steps
+
+<Steps>
+
+1. **Log in.**
+
+   You'll be redirected to your organisation's identity provider (Keycloak,
+   Okta, Entra ID, etc.). Authenticate with whatever your org uses (SSO,
+   CAC, password + MFA). On success you'll be returned to the STIG Manager
+   home page.
+
+2. **Look at the navigation rail.**
+
+   The left rail lists every Collection you have access to, plus the
+   global **STIG Library** and (for users with the privilege) **Admin**.
+   Collections you own are flagged with a small badge.
+
+3. **Create your first Collection.**
+
+   Click **+ New Collection** in the rail. Give it a name and an optional
+   description. You'll be made Owner of the new Collection and dropped into
+   its Configuration tab.
+
+4. **Add some Assets.**
+
+   From Configuration → Assets → **New Asset**, enter at least a name. You
+   can also paste a CSV or upload a `.ckl` / `.cklb` /
+   `.xccdf` file to create Assets in bulk — see
+   [Imports](/user-guide/concepts#imports).
+
+5. **Attach STIGs to Assets.**
+
+   On an Asset, open **STIG Attachments** and pick from the Library. The
+   Library tracks every Revision of every STIG you've imported. The latest
+   Revision is selected by default.
+
+6. **Optionally grant access to colleagues.**
+
+   Configuration → Grants → **New Grant**. Pick a user or group, pick a
+   role (Restricted / Full / Manage / Owner). For Restricted, define ACL
+   entries pointing at specific Assets, STIGs, or Labels.
+
+7. **Evaluate.**
+
+   From the Collection home, open the **Review** workspace. Pick an
+   `(Asset, STIG)` pair to see every Rule. For each Rule:
+   - Read Check, Fix, CCI, and Control mappings in the right inspector.
+   - Set the Result (`Open`, `Not a Finding`, `Not Applicable`,
+     `Informational`, `Not Reviewed`).
+   - Add Detail and (if required by the Collection) a Comment.
+   - Save. The status moves to `In Progress` (or whatever workflow your
+     Collection requires).
+
+8. **Submit for review.**
+
+   Once you've evaluated everything assigned to you, click **Submit
+   Reviews** on the workspace toolbar. Reviewers with Manage or Owner can
+   Accept (lock) or Reject (return to evaluator) individual Reviews.
+
+9. **Export.**
+
+   From the Collection toolbar:
+   - **Export CKLs** → zip of one `.ckl` per `(Asset, STIG)`.
+   - **Export CKLBs** → same but JSON.
+   - **Export XCCDF Results** → XCCDF v1.2 results files.
+   - **Export POA&M** → eMASS-compatible xlsx (default or MCCAST template).
+
+</Steps>
+
+<Aside>
+  All of the above is also doable from the API. See the
+  [API reference](/reference/api) and the
+  [authentication notes](/installation/authentication) for scopes.
+</Aside>

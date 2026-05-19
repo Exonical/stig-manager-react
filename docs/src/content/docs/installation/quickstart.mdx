@@ -1,0 +1,89 @@
+---
+title: Quick Start (Docker)
+description: Bring up STIG Manager locally with docker compose — Postgres 18, Keycloak, API, and SPA.
+---
+
+import { Steps, Tabs, TabItem, FileTree, Aside } from '@astrojs/starlight/components'
+
+This is the fastest way to a working install. You'll have Postgres 18,
+Keycloak (with a seed realm), the Go API, and the React SPA all running and
+talking to each other in under five minutes.
+
+## Prerequisites
+
+- Docker 24+ and Docker Compose v2 (`docker compose`, not `docker-compose`).
+- 4 GB free RAM.
+
+## Steps
+
+<Steps>
+
+1. **Clone the repo.**
+
+   ```bash
+   git clone https://github.com/Exonical/stig-manager-react.git
+   cd stig-manager-react
+   ```
+
+2. **Start the stack.**
+
+   ```bash
+   docker compose -f deploy/compose/docker-compose.yaml up -d
+   ```
+
+   This brings up four services:
+
+   <FileTree>
+   - postgres  Postgres 18
+   - keycloak  identity provider with seed realm `stigman`
+   - api       Go binary, serving /api/v1 and embedded SPA
+   - docs      this Starlight site at http://localhost:4321
+   </FileTree>
+
+3. **Open the app.**
+
+   - SPA: [http://localhost:54000](http://localhost:54000)
+   - API docs (Swagger UI): [http://localhost:54000/api-docs](http://localhost:54000/api-docs)
+   - Keycloak admin: [http://localhost:8080](http://localhost:8080) (`admin` / `admin`)
+
+4. **Log in as the demo user.**
+
+   The seed realm pre-creates two users:
+
+   | Username    | Password   | Privileges                       |
+   | ----------- | ---------- | -------------------------------- |
+   | `stigadmin` | `password` | `admin`, `create_collection`     |
+   | `stiguser`  | `password` | (Collection grants assigned later) |
+
+5. **Create your first Collection.**
+
+   From the Collections page, click **New Collection**. Pick a name, attach a
+   STIG from the Library, then add an Asset. You're ready to review.
+
+</Steps>
+
+## What `docker compose` does for you
+
+- Creates a `stigman_pgdata` volume backed by Postgres 18 with a dedicated
+  `stigman` database and user.
+- Imports a seed Keycloak realm `stigman.json` configured with the four OAuth
+  scopes (`stig-manager:collection`, `stig-manager:stig`, `stig-manager:user`,
+  `stig-manager:op` and each `:read` variant), demo clients for the SPA and
+  API, and the two demo users above.
+- Bootstraps the Go API with `STIGMAN_DB_*` and `STIGMAN_OIDC_PROVIDER`
+  pointing at the local services.
+- Builds the SPA and bakes it into the API container so the same origin serves
+  both.
+
+<Aside type="caution" title="Demo credentials only">
+  The seed realm and database credentials in `deploy/compose/` are for **local
+  development** only. Replace them — or point to your real IdP and database —
+  before running anywhere a human you don't trust can reach it.
+</Aside>
+
+## Next steps
+
+- [Configure your real IdP](/installation/authentication).
+- [Wire up a managed Postgres](/installation/database).
+- [Put it behind a reverse proxy](/installation/reverse-proxy).
+- [Walk through the user guide](/user-guide/quickstart).

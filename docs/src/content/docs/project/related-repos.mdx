@@ -1,0 +1,44 @@
+---
+title: Related Repositories
+description: Sibling, upstream, and integration repositories.
+---
+
+## Sibling implementations
+
+- [Exonical/stig-manager-react](https://github.com/Exonical/stig-manager-react)
+  — **this repository.** React 19 SPA + Go backend + Postgres 18.
+- [Exonical/stig-manager-next](https://github.com/Exonical/stig-manager-next)
+  — Next.js 15 (RSC) variant on the same Go backend.
+
+## Upstream
+
+- [NUWCDIVNPT/stig-manager](https://github.com/NUWCDIVNPT/stig-manager)
+  — the original Open Source project. Node/Express API, ExtJS web client,
+  MySQL.
+- [Upstream documentation](https://stig-manager.readthedocs.io/en/latest/) —
+  reference for concepts and features. This site is the source of truth for
+  this implementation.
+
+## Useful upstream clients and utilities
+
+These work unchanged with this implementation (the `/api/v1` surface is
+byte-compatible):
+
+- [NUWCDIVNPT/stigman-watcher](https://github.com/NUWCDIVNPT/stigman-watcher)
+  — Node.js CLI that watches a directory for `.ckl` / XCCDF files and
+  imports them into a Collection.
+- [NUWCDIVNPT/stig-manager-client-modules](https://github.com/NUWCDIVNPT/stig-manager-client-modules)
+  — JavaScript modules with reference parsers (`reviewsFromCkl`,
+  `reviewsFromCklb`, `reviewsFromXccdf`) and a `TaskObject` helper for
+  building import payloads.
+- [NUWCDIVNPT/stigman-orchestration](https://github.com/NUWCDIVNPT/stigman-orchestration)
+  — sample CAC + nginx + Keycloak orchestration for upstream.
+
+## Planned
+
+- `stig-manager-react-cli` — a thin Go CLI client. Will live alongside
+  this repository.
+- `stig-manager-helm` — Helm chart for Kubernetes deployments.
+
+If you maintain a client / integration / packaging for this project and
+want it listed here, open a PR adding it to this page.

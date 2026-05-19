@@ -1,0 +1,89 @@
+---
+title: Examples
+description: Reference deployment topologies and integration scenarios.
+---
+
+## Local development
+
+The fastest way to a working install. See the
+[Quick Start](/installation/quickstart). The compose stack brings up:
+
+- Postgres 18.
+- Keycloak with the `stigman` realm.
+- The Go API + embedded SPA.
+- The Astro Starlight docs.
+
+## Single-node production with Caddy
+
+A common topology: one VM, Caddy fronting the binary, a managed Postgres,
+Keycloak somewhere else.
+
+```
+        ┌──────────────┐
+        │   Caddy      │ TLS termination + zstd/gzip
+        └──────┬───────┘
+               │
+        ┌──────▼───────┐
+        │  stigman     │ Go binary, embedded SPA + docs
+        └──────┬───────┘
+               │
+       ┌───────▼───────┐         ┌────────────────┐
+       │ managed PG 18 │         │   Keycloak     │
+       └───────────────┘         └────────────────┘
+```
+
+See the [Reverse Proxy](/installation/reverse-proxy) page for a
+working Caddyfile.
+
+## Kubernetes with Helm
+
+*(Helm chart shipping in a later milestone.)* The chart will deploy:
+
+- A `Deployment` running the `stigman` image with two replicas.
+- A `Service` and an `Ingress`.
+- A `PodMonitor` and `PrometheusRule` for the operational endpoints.
+- Configurable secrets for the Postgres connection and OIDC client
+  credentials.
+
+## Scanner integration (XCCDF results)
+
+```bash
+curl -sSf https://stigman.example.invalid/api/v1/collections/42/reviews \
+  -H "Authorization: Bearer $JWT" \
+  -H "Content-Type: multipart/form-data" \
+  -F "file=@./results/xccdf-results.xml" \
+  -F "asset.name=web-01" \
+  -F "importOption.unreviewedComment=on"
+```
+
+The API parses the XCCDF results, matches each rule to your Collection's
+attached STIG, reconciles against any existing Reviews, and returns a
+summary of created/updated rows.
+
+## CSV batch asset import
+
+```bash
+curl -sSf https://stigman.example.invalid/api/v1/collections/42/assets:batch \
+  -H "Authorization: Bearer $JWT" \
+  -H "Content-Type: text/csv" \
+  --data-binary @./assets.csv
+```
+
+The CSV shape matches upstream's
+[`Stig-Manager-Asset-Batch-Import.csv`](https://github.com/NUWCDIVNPT/stig-manager/blob/main/docs/user-guide/Stig-Manager-Asset-Batch-Import.csv).
+
+## CI-integrated import (GitHub Actions sketch)
+
+```yaml
+- name: Import scan results to STIG Manager
+  env:
+    STIGMAN_HOST: stigman.example.invalid
+    STIGMAN_TOKEN: ${{ secrets.STIGMAN_TOKEN }}
+    COLLECTION_ID: '42'
+  run: |
+    for f in results/*.xml; do
+      curl -fsSL "https://${STIGMAN_HOST}/api/v1/collections/${COLLECTION_ID}/reviews" \
+        -H "Authorization: Bearer ${STIGMAN_TOKEN}" \
+        -F "file=@${f}"
+    done
+```

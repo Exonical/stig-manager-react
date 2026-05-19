@@ -1,0 +1,46 @@
+---
+title: STIG Rule Exceptions & Republished Rules
+description: How republished Rules behave and how to handle them in your Collection.
+---
+
+import { Aside } from '@astrojs/starlight/components'
+
+DISA occasionally republishes a Rule under the same `RuleId` with
+different content. These cases are extremely rare — roughly **0.014%** of
+the total Rules published in DISA Reference STIGs — but they do have
+consequences for evaluation.
+
+## Current behaviour
+
+If a STIG Rule has been republished:
+
+- Only the **latest** version of the Rule maintains a Review.
+- When viewing an **older** Revision, the displayed Check / Fix content
+  is correct for that revision, **but the Review shown is the latest
+  Review**. Edits while viewing an older revision update the latest
+  Review.
+
+The STIG Manager project (both upstream and this implementation) is
+developing a richer approach to republished Rules. Until then, the
+behaviour above is what you can rely on.
+
+## How to identify a republished Rule
+
+- The Library **STIG Compare** tool highlights Rules whose Check Content
+  SHA changes between revisions even though the `RuleId` did not.
+- The Admin → Republished Rules view lists every Rule the platform has
+  detected as republished.
+- `GET /stigs/republished-rules` returns the same data via the API.
+
+## Reporting cases
+
+For more information on DISA's policy towards republishing Rules, please
+contact DISA at their help email address:
+[disa.stig_spt@mail.mil](mailto:disa.stig_spt@mail.mil).
+
+<Aside>
+  The full historical CSV of republished Rules is available in the
+  upstream project at
+  [`docs/user-guide/republished-rules.csv`](https://github.com/NUWCDIVNPT/stig-manager/blob/main/docs/user-guide/republished-rules.csv).
+  We will mirror and keep this list current in a forthcoming release.
+</Aside>

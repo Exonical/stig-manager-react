@@ -1,0 +1,150 @@
+---
+title: Operations
+description: Operational endpoints, jobs, classification banner, and live observability.
+---
+
+import { Aside } from '@astrojs/starlight/components'
+
+App Managers have access to a small set of operational endpoints rooted at
+`/op/*`. These are reserved for the `admin` privilege plus a
+`stig-manager:op` (or `:read` for read-only) scope.
+
+## Endpoint reference
+
+| Endpoint              | Method     | Purpose                                                |
+| --------------------- | ---------- | ------------------------------------------------------ |
+| `/op/appinfo`         | `GET`      | Cluster + node telemetry, user/role counts, DB stats.  |
+| `/op/appdata`         | `GET`      | Export database to a single JSON document.             |
+| `/op/appdata`         | `POST`     | Import a JSON document into the database.              |
+| `/op/appdata/tables`  | `GET`      | List of importable tables and counts.                  |
+| `/op/configuration`   | `GET`      | Effective configuration (secrets redacted).            |
+| `/op/definition`      | `GET`      | Returns the embedded OpenAPI 3.0.1 definition.         |
+| `/op/details`         | `GET`      | Single-call dashboard summary (used by the SPA home).  |
+| `/op/state`           | `GET`      | Current state — `available` / `starting` / `degraded`. |
+| `/op/state/sse`       | `GET (SSE)`| Push system state changes.                             |
+| `/op/log`             | `WS`       | Live tail of structured logs.                          |
+| `/op/audit`           | `GET`      | Read the global audit log.                             |
+
+## AppInfo
+
+`GET /op/appinfo` returns a single deeply-nested object summarising the
+system. The exact schema is defined in `AppInfo` in the OpenAPI spec; the
+highlights:
+
+- Build info (version, commit, build date).
+- Postgres status — version, uptime, pool stats, table sizes.
+- User counts by privilege and by role.
+- Per-Collection summaries — grant counts, asset counts, STIG counts,
+  rule counts, settings, restricted-user counts.
+- Per-request statistics (last hour, last 24 h).
+- Operation-ID projections — how often each endpoint has been hit and at
+  what average / p95 latency.
+
+The SPA's Admin Dashboard renders the contents of this endpoint.
+
+## AppData export and import
+
+AppData is the canonical interchange format. A single `GET /op/appdata`
+returns a self-describing JSON blob that can be re-applied via
+`POST /op/appdata` to migrate or restore data.
+
+### Export
+
+```http
+GET /op/appdata?elevate=true HTTP/1.1
+Authorization: Bearer <admin JWT with stig-manager:op:read>
+Accept: application/json
+```
+
+The response is streamed to keep memory usage bounded.
+
+### Import
+
+```http
+POST /op/appdata HTTP/1.1
+Authorization: Bearer <admin JWT with stig-manager:op>
+Content-Type: application/json
+
+{...the previously-exported document...}
+```
+
+Useful query parameters:
+
+- `mode=dryRun` — validate and report changes without applying.
+- `mode=replace` — replace all data (the default for AppData applies).
+- `mode=merge` — merge by primary keys; skip rows that already exist.
+
+<Aside type="caution">
+  Importing AppData is destructive in `replace` mode. Take a Postgres
+  backup first and run `mode=dryRun` to preview.
+</Aside>
+
+## State and SSE
+
+`/op/state` returns one of `starting`, `available`, `degraded` along with
+a `reason` and the timestamp of the last transition. `/op/state/sse`
+streams these transitions as they happen.
+
+The SPA subscribes to the SSE endpoint and renders a small status pill in
+the top bar. When `degraded`, the pill turns yellow and links to the
+reason.
+
+## Live logs
+
+`/op/log` is a WebSocket. After upgrading, the server sends one snapshot
+message containing version, config (redacted), and a recent log slice,
+then begins forwarding new log events as they happen. Each event is one
+JSON object (see [Logging](/installation/logging) for the schema).
+
+The SPA's Admin → Live Logs page is a thin client over this endpoint with
+filtering and pause/resume.
+
+## Audit log
+
+`/op/audit` returns the global audit log: every mutating operation, with
+`who`, `when`, `target`, and `before` / `after` snapshots. Filters:
+
+- `from=` / `to=` — ISO timestamps.
+- `actor=` — user or service account name.
+- `target=` — `collection.id` / `asset.id` / `review.id` etc.
+- `action=` — `create` / `update` / `delete` / `restore`.
+
+Per-Collection audit (a strict subset) is available to Collection Owners
+at `/collections/{id}/audit`.
+
+## Jobs
+
+Jobs are the platform's persistent scheduler. They are accessible via
+`/jobs/*` (any authenticated user can read their own jobs;
+`stig-manager:op` is required to create system-scope jobs).
+
+- `Job` — a recurring or one-shot job definition.
+- `Job Task` — one unit of work in a Job.
+- `Job Run` — an execution of a Task; carries logs and a status.
+
+Built-in Tasks (see also the Tasks dropdown in the Admin UI):
+
+- `library.compileImport`
+- `metrics.recompute`
+- `audit.rollup`
+- `appdata.export`
+- `appdata.import`
+- `collection.clone`
+- `collection.export.cklBundle`
+- `collection.export.poam`
+
+## Classification banner
+
+The `STIGMAN_CLASSIFICATION` env var sets the banner shown at the top of
+every page. Allowed values: `NONE` (default), `U`, `CUI`, `S`, `TS`.
+The banner is a visual aid — it does not enforce classification at the
+data layer.
+
+## Reverse-proxy compatibility
+
+- Disable proxy buffering on `/op/state/sse` and `/op/log`.
+- Allow `Authorization: Bearer` to pass through untouched.
+- Increase `proxy_read_timeout` (or equivalent) to at least 5 minutes so
+  long-lived SSE/WS streams aren't dropped.
+
+See [Reverse Proxy](/installation/reverse-proxy) for example configs.

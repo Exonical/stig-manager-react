@@ -1,0 +1,97 @@
+---
+title: Data & Permissions
+description: How data visibility maps to scopes, privileges, grants, and roles.
+---
+
+import { Aside } from '@astrojs/starlight/components'
+
+Data visibility in STIG Manager is decided by three independent axes that
+combine on every API call:
+
+1. **JWT scopes** — the categories of action the token *could* perform.
+2. **Privileges** — coarse capabilities like `admin` or `create_collection`.
+3. **Per-Collection grants** — the fine-grained role (Restricted, Full,
+   Manage, Owner) tying a User or User-Group to a Collection.
+
+A request must clear **all three**: a token that lacks the
+`stig-manager:collection` scope cannot edit a Collection even if the user is
+its Owner. A user who is `admin` but whose token only has
+`stig-manager:user:read` cannot create users.
+
+## Privileges (coarse)
+
+| Privilege            | Effect                                                  |
+| -------------------- | ------------------------------------------------------- |
+| `admin`              | Implicit Owner on every Collection. Required for `/op/*` writes. |
+| `create_collection`  | Can create new Collections. Without it, a user can be granted to an existing Collection but cannot create one. |
+| *(none)*             | Subject entirely to per-Collection grants.              |
+
+`admin` is intended for a small operations team. Day-to-day Collection
+ownership should be expressed via grants, not by handing out `admin`.
+
+## Grants (fine-grained)
+
+A **grant** binds a subject (User or User-Group) to a Collection at one of
+four roles:
+
+| Role         | Numeric | Read | Update reviews | Manage Collection | Manage grants |
+| ------------ | ------- | ---- | -------------- | ----------------- | ------------- |
+| Restricted   | 1       | ✓ (only assigned STIGs/Assets) | ✓ (only assigned) | — | — |
+| Full         | 2       | ✓    | ✓              | —                 | —             |
+| Manage       | 3       | ✓    | ✓              | ✓                 | —             |
+| Owner        | 4       | ✓    | ✓              | ✓                 | ✓             |
+
+**Restricted** grants can be further narrowed by ACL entries that pick
+specific (Asset, STIG) pairs and/or specific Labels.
+
+## ACLs on Restricted grants
+
+A Restricted grant supports per-row ACL entries. Each entry can target:
+
+- A specific Asset.
+- A specific STIG (benchmark).
+- A specific (Asset, STIG) pair.
+- A Label name (any Asset carrying the Label).
+
+ACLs are additive: a Restricted user sees the union of all matching rows. To
+revoke, delete the ACL entry, not the grant itself.
+
+See [Roles & Access](/user-guide/roles-and-access) for the user-facing
+explanation.
+
+## User Groups
+
+User-Groups are sets of users that can be granted en masse. A user inherits
+the maximum role from all groups they belong to **plus** any direct grant.
+ACLs from group membership are merged with direct ACLs.
+
+## How the API enforces this
+
+Every request flow is roughly:
+
+1. Validate the JWT (signature, exp, aud, scope, algorithm).
+2. Resolve the caller into a `(userId, privileges[], scopes[])` triple.
+3. For data-bearing requests, evaluate per-Collection role:
+   - Compute the *effective grant* as `max(directGrant, group grants, admin ⇒ Owner)`.
+   - Apply ACL constraints for Restricted callers.
+4. For each row returned, redact attributes the caller's role cannot see
+   (e.g. comments on Reviews require Full+).
+
+## What's stored
+
+| Table                | Notes                                                         |
+| -------------------- | ------------------------------------------------------------- |
+| `user_data`          | Identity (username, displayName, email, lastAccess, prefs).   |
+| `user_group`         | Group metadata.                                               |
+| `user_group_user_map`| Membership rows.                                              |
+| `collection_grant`   | `(collection_id, subject, role)`.                             |
+| `collection_grant_acl` | `(grant_id, asset_id?, benchmark_id?, label_id?, access)`. |
+
+All access decisions are logged to `audit_log` (admin-readable).
+
+<Aside>
+  Most failures the user sees as `403` actually come from grant evaluation,
+  not the JWT layer. The `/user` endpoint returns the caller's resolved
+  grants and ACLs so the SPA can decide what menus to show — but the API
+  re-checks every request.
+</Aside>

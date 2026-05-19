@@ -1,0 +1,41 @@
+---
+title: Roadmap
+description: Where this implementation is going and how it's sequenced.
+---
+
+This page is a high-signal view of the **milestones** for reaching upstream
+v1.6.10 feature parity. Each item is one or more pull requests against
+[`Exonical/stig-manager-react`](https://github.com/Exonical/stig-manager-react).
+
+The order is intentional: the docs site lands first so we always have a
+public spec to point at; everything else lands behind it.
+
+| # | Milestone                                          | Status |
+|---|----------------------------------------------------|---------------------|
+| 0 | Docs site (Astro Starlight) — **this PR**          | <span class="status-pill" data-tone="warn">In Review</span> |
+| 1 | Repo scaffold (Go workspace, Vite SPA, shadcn, CI, Dockerfile, docker-compose) | <span class="status-pill" data-tone="todo">Planned</span> |
+| 2 | OpenAPI lift + types (oapi-codegen, openapi-typescript, 501 stubs) | <span class="status-pill" data-tone="todo">Planned</span> |
+| 3 | Auth (OIDC PKCE) end-to-end                       | <span class="status-pill" data-tone="todo">Planned</span> |
+| 4 | DB + baseline migration (Postgres 18, goose)      | <span class="status-pill" data-tone="todo">Planned</span> |
+| 5 | STIG Library + XCCDF parser                       | <span class="status-pill" data-tone="todo">Planned</span> |
+| 6 | Collections, Assets, Grants, Labels               | <span class="status-pill" data-tone="todo">Planned</span> |
+| 7 | Reviews (single-asset workspace)                  | <span class="status-pill" data-tone="todo">Planned</span> |
+| 8 | Imports (CKL / CKLB / XCCDF results)              | <span class="status-pill" data-tone="todo">Planned</span> |
+| 9 | Batch / Collection Review workspace               | <span class="status-pill" data-tone="todo">Planned</span> |
+| 10 | Metrics & CORA dashboard                         | <span class="status-pill" data-tone="todo">Planned</span> |
+| 11 | Exports (CKL bundle, XCCDF results, POA&M xlsx)  | <span class="status-pill" data-tone="todo">Planned</span> |
+| 12 | Users, User Groups, Grants UI                    | <span class="status-pill" data-tone="todo">Planned</span> |
+| 13 | Jobs + log socket                                | <span class="status-pill" data-tone="todo">Planned</span> |
+| 14 | AppInfo / AppData / op state SSE                 | <span class="status-pill" data-tone="todo">Planned</span> |
+| 15 | Review handling + Republished Rules view         | <span class="status-pill" data-tone="todo">Planned</span> |
+| 16 | Hardening (rate limits, audit surface, Playwright e2e, Helm chart) | <span class="status-pill" data-tone="todo">Planned</span> |
+
+## Post-v1 ideas
+
+- Live per-Collection SSE / WebSocket so concurrent evaluators see each
+  other's saves.
+- Optional object-storage backend for attachments (S3, MinIO, Azure
+  Blob).
+- A small Go CLI client (`stigmanctl`).
+- Helm chart with operator-style migrations.
+- Iron Bank delivery.

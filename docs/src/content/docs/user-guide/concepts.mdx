@@ -1,0 +1,165 @@
+---
+title: Concepts & Workflow
+description: The day-to-day model — Collections, Assets, STIGs, Reviews, Labels, Grants, and how they interact.
+---
+
+import { Aside } from '@astrojs/starlight/components'
+
+This page is a deeper read on the data model and the typical workflow.
+Skim it before you build a Collection of any size — most "why can't I…?"
+questions resolve here.
+
+## Collections
+
+A Collection is the unit of organisation, access control, and reporting.
+Collections do **not** have to mirror an RMF Package. Large packages should
+be split into several Collections to keep grant management sane.
+
+A Collection contains:
+
+- **Assets**
+- **STIG Attachments** — `(Asset, STIG)` pairs that define what's
+  evaluated.
+- **Reviews** — `(Asset, Rule)` rows produced during evaluation.
+- **Grants** — `(User-or-Group, Role, optional ACL)`.
+- **Labels** — free-form, colour-coded, attached to Assets.
+- **Settings** — review requirements (comment required, evaluator
+  signoff, etc.), status flow, history retention.
+
+## Assets
+
+An Asset is anything you evaluate. The required fields are name and one of:
+FQDN, MAC, or IP. Optional metadata includes description and labels.
+
+Assets can be:
+
+- **Computing** (default) — the typical case.
+- **Non-computing** — appliances, mockups, paper systems.
+
+Assets can be **transferred** between Collections (Owner-only) without
+losing Review history.
+
+## Labels
+
+Labels are colour-coded tags attached to Assets. They power filtering in
+nearly every grid in the UI and they can be used in ACLs to grant access to
+groups of Assets without listing each one.
+
+A Label exists at the Collection level — Collections do not share Labels.
+
+## STIGs and the Library
+
+The **Library** is the global set of STIG Benchmarks and their Revisions
+known to STIG Manager. Anyone with `stig-manager:stig:read` can browse it;
+`stig-manager:stig` is required to upload new revisions.
+
+Uploading is XCCDF only. The parser supports:
+
+- DISA STIGs (`Benchmark` root element).
+- DISA SCAP data streams (`data-stream-collection` root element).
+
+When a Benchmark is uploaded, the Library:
+
+1. Stores the new Revision.
+2. Records the SHA-256 of every Rule's Check Content.
+3. For each Collection that has the previous Revision attached, computes
+   the migration set: Rules whose `(version, checkSha256)` is unchanged
+   carry their Reviews forward.
+
+See [Review Handling](/user-guide/review-handling).
+
+## Reviews
+
+A Review is one row per `(Asset, Rule)`. The schema:
+
+| Field           | Type        | Notes                                                        |
+| --------------- | ----------- | ------------------------------------------------------------ |
+| `result`        | enum        | `Open`, `Not a Finding`, `Not Applicable`, `Informational`, `Not Reviewed`. |
+| `detail`        | text        | What the evaluator did or saw.                               |
+| `comment`       | text        | Optional, may be required by Collection settings.            |
+| `status`        | enum        | `In Progress`, `Submitted`, `Accepted`, `Rejected`.          |
+| `severity override` | enum?   | Optional, with justification.                                |
+| `attachments`   | files       | Optional, attached at the Review level.                      |
+| `evaluator`     | user        | Who entered the data.                                        |
+| `validator`     | user        | Who Accepted / Rejected (status `Accepted` / `Rejected`).    |
+| `ts_action`     | timestamptz | Last status change.                                          |
+
+History is preserved: every save creates a `review_history` row that can be
+inspected from the Review workspace.
+
+### Review workflow
+
+```
+   evaluator saves   reviewer clicks Accept    reviewer clicks Reject
+        ▼                  ▼                          ▼
+  In Progress  ─▶  Submitted  ─▶  Accepted        Rejected ─▶ In Progress
+                                                   (back to evaluator)
+```
+
+The Collection's settings decide:
+
+- Whether a comment is required for each result.
+- Whether the evaluator can submit incomplete reviews.
+- Whether validators can Accept their own Reviews.
+- The minimum role required to Accept (Manage by default; Owner-only is an
+  option).
+
+## Grants and Roles
+
+See [Roles & Access](/user-guide/roles-and-access) for the full table.
+Short version: four roles (Restricted, Full, Manage, Owner), with
+Restricted gated by ACL entries.
+
+## Imports
+
+Three import paths exist:
+
+- **XCCDF results** (`.xml`) — produced by SCC, OpenSCAP, etc. Each result
+  matches an Asset+Rule and becomes a Review.
+- **CKL** (`.ckl`) — XML from STIG Viewer.
+- **CKLB** (`.cklb`) — JSON, the newer STIG Viewer format.
+
+Imports are reconciled against existing Reviews:
+
+- If a Review already exists at status `Accepted`, the import is **ignored**
+  for that Rule (configurable per-Collection).
+- Otherwise the imported row replaces the existing one and history is
+  preserved.
+
+CSV import is supported for **Assets only** (matching the upstream
+`Stig-Manager-Asset-Batch-Import.csv` shape).
+
+## Exports
+
+- **CKL bundle** (`.zip`) — one `.ckl` per `(Asset, STIG)`.
+- **CKLB bundle** (`.zip`) — same but JSON.
+- **XCCDF Results** — XCCDF v1.2 result files.
+- **POA&M xlsx** — eMASS-style xlsx with one row per Open finding,
+  templated.
+- **Collection AppData JSON** — full backup of the Collection (rule-level,
+  including history). Re-importable via `/op/appdata`.
+
+## Jobs
+
+Long-running operations — bulk imports, exports, Collection clones — run
+asynchronously as **Jobs**. Each Job has a list of Tasks; each Task has a
+list of Runs. The Job UI surfaces logs and progress per Run, and the
+`/jobs` API exposes the same.
+
+<Aside>
+  The job scheduler is leader-elected via a Postgres advisory lock; running
+  multiple API replicas is safe.
+</Aside>
+
+## Audit
+
+Every mutating operation produces an `audit_log` row. Admins can read the
+global log; Collection Owners can read their Collection's log.
+
+## Real-time
+
+- `/op/state/sse` — system state pushes (`starting`, `available`,
+  `degraded`).
+- `/op/log` — admin-only WebSocket tail of structured logs.
+- *(Planned post-v1)*: per-Collection SSE so two evaluators in the same
+  Collection see each other's writes live.

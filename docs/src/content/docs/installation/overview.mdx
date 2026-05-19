@@ -1,0 +1,68 @@
+---
+title: Installation & Setup — Overview
+description: System architecture and prerequisites for deploying STIG Manager.
+---
+
+import { Aside } from '@astrojs/starlight/components'
+
+A STIG Manager deployment has three pieces:
+
+1. **PostgreSQL 18** — the data store.
+2. **An OIDC / OAuth 2.0 provider** — Keycloak, Okta, Azure Entra ID, or any
+   compliant IdP that can issue JWTs containing the required claims.
+3. **The `stigman` binary** — a single Go executable that serves both the API
+   under `/api/v1` and the static SPA bundle at `/`.
+
+The Go binary is the only application component. It is configured entirely via
+environment variables and can be run from a container image, a systemd unit,
+or a Kubernetes Deployment.
+
+## Prerequisites
+
+| Component       | Minimum                          | Recommended                  |
+| --------------- | -------------------------------- | ---------------------------- |
+| PostgreSQL      | 16.x                             | 18.x                         |
+| OIDC provider   | OIDC-conformant, RS256 / ES256   | Keycloak 24+, Okta, Entra ID |
+| RAM (API)       | 512 MB                           | 1 GB                         |
+| CPU (API)       | 1 vCPU                           | 2+ vCPU                      |
+| Storage         | 5 GB (logs, attachments) per yr  | NVMe or fast SSD             |
+| TLS terminator  | Reverse proxy (caddy / nginx)    | Required for production      |
+
+<Aside type="note">
+  Postgres 18 is the **target** version. Versions 16 and 17 will boot the schema
+  but new migrations may use Postgres-18-only features (e.g. SQL/JSON
+  constructors). We test against 18.
+</Aside>
+
+## Deployment options
+
+- **All-in-one container** — the `Exonical/stig-manager-react` image bundles
+  API + SPA. Bring your own Postgres and IdP.
+- **Helm chart** *(planned)* — for Kubernetes deployments, including a
+  PodMonitor and a `PostgreSQL` reference.
+- **Bare binary** — for sites that prefer systemd. The binary is statically
+  linked and CGO-free.
+
+## What gets created on first boot
+
+When the API connects to an empty Postgres database, it runs the **baseline
+migration**: a single SQL file that synthesises the schema accumulated by
+upstream `stig-manager` through its 47 migrations, translated to Postgres
+types (`jsonb`, `timestamptz`, `uuid`, etc.). Subsequent releases ship forward
+migrations numbered from `1000_` onward.
+
+## What goes next
+
+- [Quick Start (Docker)](/installation/quickstart) — fastest way to a running
+  system.
+- [Database](/installation/database) — Postgres provisioning details.
+- [Authentication](/installation/authentication) — IdP claim mapping, scopes,
+  and required configuration.
+- [Environment Variables](/installation/environment-variables) — the full
+  reference.
+- [Data & Permissions](/installation/data-and-permissions) — how data
+  visibility maps to grants and roles.
+- [Logging](/installation/logging) — log format, sinks, and shipping.
+- [Reverse Proxy](/installation/reverse-proxy) — caddy / nginx / Traefik
+  patterns.
+- [Hardening & TLS](/installation/securing) — production-grade settings.

@@ -1,0 +1,53 @@
+---
+title: Reference Overview
+description: How to use the API and Reference section.
+---
+
+import { LinkCard } from '@astrojs/starlight/components'
+
+The Reference section documents the API surface, auth scopes, and data
+shapes that an integration developer needs.
+
+## API
+
+The OpenAPI v1 spec served by this site is **the same one** packaged with
+the API binary. You can also get the live, deployment-specific version at
+`GET /op/definition`.
+
+<LinkCard
+  title="STIG Manager API"
+  href="/reference/api"
+  description="Interactive OpenAPI 3.0.1 reference for every endpoint."
+/>
+
+## Auth at a glance
+
+- **Bearer JWTs** for every endpoint.
+- **PKCE** is the supported flow for the SPA; **Device Authorization Grant**
+  is supported for automation clients; **Client Credentials** for service
+  accounts when carefully scoped.
+- The four scope families are
+  `stig-manager:collection`, `stig-manager:stig`, `stig-manager:user`,
+  `stig-manager:op` and each has a `:read` variant.
+- See [Authentication & Identity](/installation/authentication) for full
+  configuration.
+
+## Compatibility with upstream
+
+The path layout, scope names, request/response bodies, and error envelopes
+are byte-compatible with [upstream
+NUWCDIVNPT/stig-manager](https://github.com/NUWCDIVNPT/stig-manager) at
+version 1.6.10. Existing scanners, automation, and integrations should
+work unchanged when pointed at this implementation.
+
+If you find a divergence, please file an issue at
+[Exonical/stig-manager-react](https://github.com/Exonical/stig-manager-react/issues).
+
+## Common conventions
+
+- Pagination via `?elevate=true` and projection query parameters.
+- Errors use the `Error` schema (a `name`, `detail`, `request` object, and
+  optional `error[]` array with field-level information).
+- Times are ISO-8601 with a timezone offset.
+- IDs are UUIDs or short integer strings (per the spec's schema for each
+  resource).

@@ -1,0 +1,145 @@
+---
+title: Authentication & Identity
+description: OIDC / OAuth 2.0 (PKCE) JWT claims, scopes, and provider configuration.
+---
+
+import { Aside, Tabs, TabItem } from '@astrojs/starlight/components'
+
+The API requires an OAuth 2.0 JSON Web Token (JWT) that conforms to the
+[OpenID Connect](https://openid.net/connect/) specification on every request.
+The web client uses **Authorization Code Flow with PKCE**. For automation
+clients we recommend the **Device Authorization Grant** flow.
+
+The system has been tested with **Keycloak**, **Okta**, and **Azure Entra
+ID**. Any compliant OIDC provider should work as long as it can issue a token
+matching the [JWT requirements](#jwt-requirements) below.
+
+<Aside type="note">
+  The Docker Compose preset includes a pre-configured Keycloak realm
+  (`stigman`). You can use that as-is for local development without changing
+  any of the variables below.
+</Aside>
+
+## JWT requirements
+
+The JWT must provide the following claims. Several have configurable claim
+locations (mirroring upstream) so you can adapt to your provider:
+
+| Field        | Env var                          | Default               | Type                                  |
+| ------------ | -------------------------------- | --------------------- | ------------------------------------- |
+| Username     | `STIGMAN_JWT_USERNAME_CLAIM`     | `preferred_username`  | string                                |
+| Full name    | `STIGMAN_JWT_NAME_CLAIM`         | `name`                | string (optional)                     |
+| Email        | `STIGMAN_JWT_EMAIL_CLAIM`        | `email`               | string (optional)                     |
+| Privileges   | `STIGMAN_JWT_PRIVILEGES_CLAIM`   | `realm_access.roles`  | array&lt;string&gt; or `null`         |
+| Scope        | `STIGMAN_JWT_SCOPE_CLAIM`        | `scope`               | space-separated string (RFC 6749)     |
+| Assertion ID | `STIGMAN_JWT_ASSERTION_CLAIM`    | `jti`                 | string                                |
+| Service name | `STIGMAN_JWT_SERVICENAME_CLAIM`  | `clientId`            | string                                |
+| Audience     | `STIGMAN_JWT_AUD_VALUE`          | (unset)               | if set, `aud` must include this value |
+
+Some providers use different claim names — set the env vars accordingly:
+
+- **Okta / Entra ID**: scopes live at `scp` rather than `scope`.
+- **ADFS / Entra ID**: assertion ID at `uti` rather than `jti`.
+
+## Scopes
+
+STIG Manager uses four scope families, each with a `:read` variant:
+
+| Scope                          | Allows                                       |
+| ------------------------------ | -------------------------------------------- |
+| `stig-manager:collection`      | Read+write within Collections (subject to per-Collection role grants). |
+| `stig-manager:collection:read` | Read-only within Collections.                |
+| `stig-manager:stig`            | Manage STIG Library (upload / delete revisions). |
+| `stig-manager:stig:read`       | Read the STIG Library.                       |
+| `stig-manager:user`            | Manage users, user-groups, and grants.       |
+| `stig-manager:user:read`       | Read user / group / grant data.              |
+| `stig-manager:op`              | Operational endpoints (`/op/*`).             |
+| `stig-manager:op:read`         | Read-only operational endpoints.             |
+
+Scopes are *necessary* but not *sufficient* — Collection-level access is
+gated by **Grants** (Restricted / Full / Manage / Owner). See
+[Roles & Access](/user-guide/roles-and-access).
+
+## Privileges
+
+The `privileges` claim is an array of strings interpreted by the API:
+
+- `admin` — implicit owner across all Collections; can read `/op/*`.
+- `create_collection` — can create new Collections.
+
+Privileges are coarse. Day-to-day permissions come from per-Collection
+grants, not from this claim.
+
+## Algorithm and key handling
+
+- Only asymmetric signatures are accepted: **RS256**, **RS384**, **RS512**,
+  **ES256**, **ES384**.
+- `none` is rejected.
+- Keys are fetched from the provider's `jwks_uri` and cached with `kid`
+  awareness.
+- A short list of **known insecure `kid` values** is rejected outright (e.g.
+  the well-known Keycloak demo key shipped in some examples).
+
+## Provider configuration
+
+<Tabs>
+
+<TabItem label="Keycloak">
+
+1. Create a realm (the docker-compose preset names it `stigman`).
+2. Create a confidential client `stig-manager-api` for the API (optional, used
+   only if you turn on the Swagger UI authorize button).
+3. Create a public client `stig-manager` for the SPA:
+   - Standard flow enabled, Direct access disabled.
+   - Redirect URIs: `https://your-host/` and `https://your-host/oauth/callback`.
+   - Web origins: `+`.
+   - Proof Key for Code Exchange: **S256**.
+4. Create client scopes for each `stig-manager:*` scope and assign them as
+   *optional* scopes to the SPA client.
+5. Set the username, name, email mappers as required.
+
+</TabItem>
+
+<TabItem label="Okta">
+
+1. Create an OIDC SPA application.
+2. Grant Types: Authorization Code + Refresh Token. PKCE required.
+3. Configure custom scopes `stig-manager:collection`, `…:stig`, `…:user`,
+   `…:op` (and `:read` variants) under your authorization server.
+4. Set `STIGMAN_JWT_SCOPE_CLAIM=scp`.
+5. Set `STIGMAN_JWT_PRIVILEGES_CLAIM` to the path of your Okta groups claim
+   (e.g. `groups`).
+
+</TabItem>
+
+<TabItem label="Azure Entra ID">
+
+1. Register an SPA application.
+2. Expose API → Add scopes `stig-manager:collection` etc. as separate API
+   permissions.
+3. Configure manifest `accessTokenAcceptedVersion: 2`.
+4. Set `STIGMAN_JWT_SCOPE_CLAIM=scp` and
+   `STIGMAN_JWT_ASSERTION_CLAIM=uti`.
+5. Set `STIGMAN_JWT_AUD_VALUE` to your application's URI (`api://…`).
+
+</TabItem>
+
+</Tabs>
+
+## Common configuration variables
+
+| Variable                          | Purpose                                              |
+| --------------------------------- | ---------------------------------------------------- |
+| `STIGMAN_OIDC_PROVIDER`           | Issuer URL (used for both the SPA and JWT validation). |
+| `STIGMAN_JWT_AUD_VALUE`           | Optional required `aud` claim value.                 |
+| `STIGMAN_CLIENT_ID`               | OIDC client ID baked into the SPA bundle.            |
+| `STIGMAN_CLIENT_EXTRA_SCOPES`     | Whitespace-separated list appended to PKCE request.  |
+| `STIGMAN_CLIENT_SCOPE_PREFIX`     | Adds a prefix to the requested scope list.           |
+| `STIGMAN_CLIENT_RESPONSE_MODE`    | `fragment` (default) or `query`.                     |
+| `STIGMAN_CLIENT_REAUTH_ACTION`    | `popup` (default), `redirect`, or `iframe`.          |
+| `STIGMAN_CLIENT_USER_TIMEOUT`     | Seconds of inactivity before re-auth is required.    |
+| `STIGMAN_CLIENT_ADMIN_TIMEOUT`    | Same but for `admin` users.                          |
+| `STIGMAN_DEV_ALLOW_INSECURE_TOKENS` | **Development only.** Disables some validation.    |
+
+See [Environment Variables](/installation/environment-variables) for the
+complete list.

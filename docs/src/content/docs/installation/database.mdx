@@ -1,0 +1,115 @@
+---
+title: Database — PostgreSQL 18
+description: Provisioning, configuration, and migration model for the STIG Manager Postgres database.
+---
+
+import { Aside, Steps, Code } from '@astrojs/starlight/components'
+
+STIG Manager uses **PostgreSQL 18** as its sole data store. The original
+upstream project used MySQL 8.x; this re-implementation rebuilds the schema in
+Postgres-native types.
+
+<Aside>
+  The API includes a database migration runner. On first boot against an empty
+  database it scaffolds all tables, views, sequences, and seed data.  Each
+  release that requires a schema change ships a forward migration; the runner
+  applies any pending migrations at startup.
+</Aside>
+
+## Requirements
+
+- PostgreSQL **16+**; **18** recommended.
+- A dedicated database (a Postgres _database_, not a schema-in-a-database in
+  the MySQL sense).
+- A role with `ALL PRIVILEGES` on that database. Server-administration
+  privileges (`SUPERUSER`, `CREATEDB`) are **not** required at runtime, but
+  are needed for the initial `CREATE DATABASE` if you don't pre-provision.
+- Extensions: the migration ensures `pgcrypto` and `pg_trgm` are present
+  (used for UUIDs and label search). Either pre-install them or grant the
+  role the right to create extensions on first boot.
+
+## Provisioning the database
+
+<Steps>
+
+1. **Create the role and database.**
+
+   ```sql
+   CREATE ROLE stigman LOGIN PASSWORD '<choose-something-strong>';
+   CREATE DATABASE stigman OWNER stigman;
+   ```
+
+2. **Enable extensions** (run as a superuser once):
+
+   ```sql
+   \c stigman
+   CREATE EXTENSION IF NOT EXISTS pgcrypto;
+   CREATE EXTENSION IF NOT EXISTS pg_trgm;
+   ```
+
+3. **Point the API at it** via env vars:
+
+   ```bash
+   STIGMAN_DB_HOST=db.example.invalid
+   STIGMAN_DB_PORT=5432
+   STIGMAN_DB_NAME=stigman
+   STIGMAN_DB_USER=stigman
+   STIGMAN_DB_PASSWORD=<the password>
+   STIGMAN_DB_SSLMODE=verify-full
+   ```
+
+   First boot will apply the baseline migration and any forwards.
+
+</Steps>
+
+## Connection security
+
+| Variable                    | Purpose                                                  | Default  |
+| --------------------------- | -------------------------------------------------------- | -------- |
+| `STIGMAN_DB_SSLMODE`        | `disable` / `require` / `verify-ca` / `verify-full`      | `prefer` |
+| `STIGMAN_DB_SSLROOTCERT`    | Path to CA bundle for `verify-ca` / `verify-full`        | unset    |
+| `STIGMAN_DB_SSLCERT`        | Client cert (optional, mTLS to DB)                       | unset    |
+| `STIGMAN_DB_SSLKEY`         | Client key (optional, mTLS to DB)                        | unset    |
+| `STIGMAN_DB_MAX_CONNECTIONS`| Max connections in the pool                              | `25`     |
+| `STIGMAN_DB_MAX_IDLE`       | Max idle connections                                     | `5`      |
+| `STIGMAN_DB_CONN_LIFETIME`  | Max lifetime of a pooled connection                      | `30m`    |
+
+Use `verify-full` in any environment where the database lives off-host.
+
+## Migration model
+
+Migrations are SQL files shipped with the API binary and run via
+[goose](https://github.com/pressly/goose) at startup. They live in the source
+tree under `api/migrations/`.
+
+- `0001_baseline.sql` — the synthesised end-state of upstream's 47 MySQL
+  migrations, translated to Postgres types. Idempotent against an empty DB.
+- `1000_…` onwards — forward migrations introduced by this project. We start
+  at `1000_` deliberately to leave room.
+
+Type translations applied vs. upstream MySQL:
+
+| MySQL                            | Postgres                  |
+| -------------------------------- | ------------------------- |
+| `BIGINT UNSIGNED`                | `bigint`                  |
+| `TINYINT(1)`                     | `boolean`                 |
+| `JSON`                           | `jsonb`                   |
+| `DATETIME`                       | `timestamptz`             |
+| `MEDIUMTEXT` / `LONGTEXT`        | `text`                    |
+| `CHAR(36)` (UUID strings)        | `uuid`                    |
+| Generated columns on `JSON`      | `GENERATED ALWAYS AS …` over `jsonb` |
+
+## Backups
+
+Use a standard Postgres backup tool (`pg_basebackup`, WAL-G, Barman,
+pgBackRest). There is no application-level backup mode — the database is the
+source of truth. Asset attachments, if any, are stored in the database as
+`bytea` by default (configurable to an object store in a future release).
+
+## Restoring from upstream MySQL
+
+If you're migrating from an upstream NUWCDIVNPT STIG Manager deployment, see
+the [data migration script in the project repo](https://github.com/Exonical/stig-manager-react/tree/main/tools/migrate-from-upstream)
+*(planned for a later release)*. The upstream JSON dump produced by
+`/op/appdata` is the recommended interchange format and is supported on import
+by this implementation.

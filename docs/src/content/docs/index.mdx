@@ -1,0 +1,104 @@
+---
+title: STIG Manager
+description: >-
+  Open-source API and web client for managing STIG assessments. React 19 +
+  shadcn/ui frontend, Go backend, Postgres 18.
+template: splash
+hero:
+  tagline: >-
+    Track STIG assessment status across every asset, system, and collection —
+    with a modern React 19 client, a fast Go backend, and a clean Postgres 18
+    data model.
+  image:
+    file: ../../assets/logo.svg
+  actions:
+    - text: Quick Start
+      link: /installation/quickstart
+      icon: right-arrow
+      variant: primary
+    - text: User Guide
+      link: /user-guide/quickstart
+      icon: open-book
+    - text: API Reference
+      link: /reference/api
+      icon: external
+---
+
+import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components'
+
+## What is this?
+
+This project is a from-scratch implementation of the
+[NUWCDIVNPT/stig-manager](https://github.com/NUWCDIVNPT/stig-manager) project,
+modernised top-to-bottom:
+
+- A **React 19 single-page app** built with [Vite](https://vitejs.dev),
+  [shadcn/ui](https://ui.shadcn.com), and [TanStack
+  Router/Query/Table](https://tanstack.com).
+- A **Go backend** built around the upstream OpenAPI v1 specification, so
+  existing automation, scanners, and SCAP integrations keep working unchanged.
+- A **PostgreSQL 18** data store that replaces the upstream MySQL schema.
+- The same OIDC / OAuth 2.0 (PKCE) authentication model used upstream — works
+  with Keycloak, Okta, and Azure Entra ID.
+
+<CardGrid>
+  <Card title="Collection-Based Organization" icon="setting">
+    Group Assets, STIGs, and Reviews into Collections aligned with your RMF
+    packages. Customisable Labels filter views.
+  </Card>
+  <Card title="Real-Time Metrics" icon="approve-check">
+    Dashboards show completion %, findings by severity, age-of-review, and
+    **CORA** risk scoring.
+  </Card>
+  <Card title="Review Matching Across Revisions" icon="random">
+    Reviews are matched to new STIG revisions by Rule Version + Check Content
+    hash, so evaluators only re-do work that actually changed.
+  </Card>
+  <Card title="Bulk Operations" icon="list-format">
+    Evaluate the same Rule across many Assets at once; batch import / export
+    entire Collections.
+  </Card>
+  <Card title="Imports & Exports" icon="rocket">
+    Ingest XCCDF, CKL, and CKLB files; export CKL bundles, XCCDF results, and
+    POA&M xlsx (eMASS-compatible).
+  </Card>
+  <Card title="API-First" icon="laptop">
+    Complete REST API documented inline. Build your own clients or wire in
+    scanners.
+  </Card>
+</CardGrid>
+
+## Where to start
+
+<LinkCard
+  title="I want to try it locally"
+  href="/installation/quickstart"
+  description="docker compose up — Postgres 18, Keycloak, the API, and the SPA in one go."
+/>
+<LinkCard
+  title="I evaluate STIGs"
+  href="/user-guide/quickstart"
+  description="Walkthrough of Collections, Assets, Reviews, and the review workspace."
+/>
+<LinkCard
+  title="I administer a deployment"
+  href="/admin-guide/quickstart"
+  description="Setup, grants, user groups, jobs, app data, and operational endpoints."
+/>
+<LinkCard
+  title="I'm wiring an integration"
+  href="/reference/api"
+  description="Full OpenAPI v1 reference, scopes, and auth requirements."
+/>
+
+## RMF context
+
+STIG Manager primarily supports **RMF Steps 3 (Implement)** and **4 (Assess)**
+by serving as the single source of truth for STIG assessment status. During
+**Step 6 (Monitor)** it tracks review ages, maintains history, and identifies
+what requires re-evaluation when STIGs update or systems change.
+
+The tool slots in next to eMASS-style RMF platforms, SCAP scanners, and other
+security tools — it does not replace them. It specialises in STIG assessment
+tracking and is happy to import results from scanning tools, export checklists
+for package submission, and support automation via its API.

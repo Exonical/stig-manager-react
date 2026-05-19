@@ -1,0 +1,94 @@
+---
+title: Contributing
+description: How to file issues, send PRs, and run the project locally.
+---
+
+import { Aside } from '@astrojs/starlight/components'
+
+We welcome bug reports, feature requests, and pull requests at
+[Exonical/stig-manager-react](https://github.com/Exonical/stig-manager-react).
+
+## Reporting bugs and feature requests
+
+File on the [issue tracker](https://github.com/Exonical/stig-manager-react/issues).
+For a bug, include:
+
+- Install type (Docker, bare binary, Kubernetes).
+- Detailed steps to reproduce.
+- Expected vs. actual result.
+- Logs or screenshots.
+- Environment details (OS, Postgres version, OIDC provider, browser).
+
+For a feature request, describe the user-facing behaviour first and the
+implementation second.
+
+## Pull requests
+
+We use a forking workflow:
+
+1. **Reference an issue.** Every PR should reference an existing issue.
+   If one doesn't exist, file it first.
+2. **Tests.** PRs must keep existing tests green and add tests for new
+   features or fixes. If automated tests aren't suitable, include a clear
+   manual test procedure in the PR description.
+3. **Conventional commits.** PR titles follow
+   [Conventional Commits](https://www.conventionalcommits.org/) so the
+   changelog can be generated. Examples:
+   - `feat(reviews): persist evaluator signoff timestamp`
+   - `fix(parser): handle empty CCI references in XCCDF`
+   - `docs(install): add Postgres-on-RDS notes`
+4. **Code quality.** `golangci-lint run`, `go test ./...`, `pnpm
+   typecheck`, `pnpm lint`, and `pnpm test` must all pass. CI enforces this.
+5. **No dependency creep.** Adding a runtime dependency in either the Go
+   module or any `package.json` requires a one-line justification in the
+   PR description.
+
+## Developer's Certificate of Origin
+
+We require all commits to be signed off (`git commit --signoff`) to certify
+the [DCO](https://developercertificate.org/). Sign-off lines are part of
+the commit message and are checked by CI.
+
+## Running the project locally
+
+<Aside>
+  Detailed setup is in the README. Below is the short version.
+</Aside>
+
+```bash
+# clone and bootstrap
+git clone https://github.com/Exonical/stig-manager-react.git
+cd stig-manager-react
+pnpm install                              # docs + web
+
+# bring up dependencies (Postgres, Keycloak)
+docker compose -f deploy/compose/docker-compose.yaml up -d postgres keycloak
+
+# run the API with live reload
+cd api && air
+
+# in another shell, run the SPA with HMR
+pnpm --filter web dev
+
+# in another shell, run the docs with HMR
+pnpm --filter docs dev
+```
+
+## Style guides
+
+- **Go:** standard `gofmt` + `goimports`; `golangci-lint` config under
+  `.golangci.yaml`. No `interface{}` if a concrete type fits.
+- **TypeScript:** `strict: true`; no `any`. Prefer Zod schemas at module
+  boundaries.
+- **Components:** generated via the shadcn MCP server; never hand-edited
+  to bypass the generator's conventions.
+- **CSS:** Tailwind v4 utilities; design tokens via CSS variables defined
+  in `web/src/styles/tokens.css`.
+
+## Project governance
+
+This implementation is community-maintained at Exonical. Decisions on
+direction, releases, and breaking changes are made by repository
+maintainers based on user feedback. We follow the upstream's API and
+behavioural decisions wherever feasible to keep integrations
+interchangeable.
