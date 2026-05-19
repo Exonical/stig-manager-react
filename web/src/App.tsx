@@ -1,4 +1,4 @@
-import { ShieldCheck } from 'lucide-react'
+import { LogIn, LogOut, ShieldCheck } from 'lucide-react'
 import * as React from 'react'
 
 import { ThemeToggle } from '@/components/theme-toggle'
@@ -11,6 +11,7 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { fetchAppInfo, type AppInfo } from '@/lib/api'
+import { useAuth } from '@/lib/auth/auth-context'
 
 type AppInfoState =
   | { status: 'idle' }
@@ -44,16 +45,22 @@ function App() {
               STIG Manager
             </span>
           </div>
-          <ThemeToggle />
+          <div className="flex items-center gap-2">
+            <AuthHeader />
+            <ThemeToggle />
+          </div>
         </div>
       </header>
 
       <main className="mx-auto max-w-6xl px-6 py-16">
         <section className="space-y-4 pb-12">
-          <h1 className="text-4xl font-bold tracking-tight">Milestone 1</h1>
+          <h1 className="text-4xl font-bold tracking-tight">Milestone 3</h1>
           <p className="max-w-2xl text-[var(--color-muted-foreground)]">
-            React 19 + shadcn/ui SPA and a Go API skeleton, wired together for
-            local development. The full feature set lands in Milestones 2–16.
+            OIDC PKCE auth is wired end-to-end: the SPA reads OIDC settings
+            from <code>/js/Env.js</code>, completes a PKCE login against the
+            configured provider, and attaches the access token to API
+            requests. The Go API validates tokens against the issuer's
+            JWKS and enforces per-route scopes.
           </p>
         </section>
 
@@ -62,7 +69,8 @@ function App() {
             <CardHeader>
               <CardTitle>Frontend</CardTitle>
               <CardDescription>
-                Vite, React 19, TypeScript (strict), Tailwind v4, shadcn/ui.
+                Vite, React 19, TypeScript (strict), Tailwind v4, shadcn/ui,
+                oidc-client-ts.
               </CardDescription>
             </CardHeader>
             <CardContent className="text-sm text-[var(--color-muted-foreground)]">
@@ -74,7 +82,8 @@ function App() {
             <CardHeader>
               <CardTitle>Backend</CardTitle>
               <CardDescription>
-                Go 1.23, chi router, OpenAPI v1 surface. Postgres 18 via pgx.
+                Go 1.26, chi router, JWKS-backed JWT validator, Postgres 18
+                via pgx.
               </CardDescription>
             </CardHeader>
             <CardContent className="text-sm text-[var(--color-muted-foreground)]">
@@ -86,12 +95,15 @@ function App() {
             <CardHeader>
               <CardTitle>API connectivity</CardTitle>
               <CardDescription>
-                Calls <code>GET /api/op/appinfo</code> on the Go backend
-                through the Vite dev proxy.
+                Calls <code>GET /api/op/appinfo</code> (requires the
+                <code> stig-manager:op:read</code> scope).
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
-              <Button onClick={loadAppInfo} disabled={appInfo.status === 'loading'}>
+              <Button
+                onClick={loadAppInfo}
+                disabled={appInfo.status === 'loading'}
+              >
                 {appInfo.status === 'loading' ? 'Loading…' : 'Fetch app info'}
               </Button>
               {appInfo.status === 'ok' && (
@@ -110,6 +122,58 @@ function App() {
       </main>
     </div>
   )
+}
+
+function AuthHeader() {
+  const { status, login, logout } = useAuth()
+  switch (status.kind) {
+    case 'initialising':
+      return (
+        <span className="text-sm text-[var(--color-muted-foreground)]">
+          Loading…
+        </span>
+      )
+    case 'unconfigured':
+      return (
+        <span
+          className="text-sm text-[var(--color-muted-foreground)]"
+          title={status.reason}
+        >
+          Auth not configured
+        </span>
+      )
+    case 'signed-out':
+      return (
+        <Button variant="outline" size="sm" onClick={() => void login()}>
+          <LogIn className="mr-2 size-4" />
+          Sign in
+        </Button>
+      )
+    case 'signed-in': {
+      const claims = status.user.profile as Record<string, unknown>
+      const name =
+        (claims.preferred_username as string | undefined) ??
+        (claims.name as string | undefined) ??
+        status.user.profile.sub
+      return (
+        <div className="flex items-center gap-3">
+          <span className="text-sm">
+            Signed in as <strong>{name}</strong>
+          </span>
+          <Button variant="outline" size="sm" onClick={() => void logout()}>
+            <LogOut className="mr-2 size-4" />
+            Sign out
+          </Button>
+        </div>
+      )
+    }
+    case 'error':
+      return (
+        <span className="text-sm text-[var(--color-destructive)]">
+          Auth: {status.message}
+        </span>
+      )
+  }
 }
 
 export default App

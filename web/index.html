@@ -9,6 +9,13 @@
   </head>
   <body class="bg-background text-foreground antialiased">
     <div id="root"></div>
+    <!--
+      /js/Env.js is rendered by the API at runtime and exposes
+      window.STIGMAN.Env (OIDC issuer, client id, scopes, version).
+      It must be loaded before the React bundle so AuthProvider can
+      bootstrap.
+    -->
+    <script src="/js/Env.js"></script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -2,6 +2,7 @@
 package server
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/go-chi/cors"
 
 	"github.com/Exonical/stig-manager-react/api/internal/api"
+	"github.com/Exonical/stig-manager-react/api/internal/auth"
 	"github.com/Exonical/stig-manager-react/api/internal/config"
 	"github.com/Exonical/stig-manager-react/api/internal/handlers"
 )
@@ -22,6 +24,9 @@ type Options struct {
 	Commit    string
 	BuildDate string
 	Config    *config.Config
+	// AuthProvider validates access tokens. When nil the server runs
+	// without authentication; protected endpoints will 401.
+	AuthProvider *auth.Provider
 }
 
 // Server holds the HTTP router and its dependencies.
@@ -32,6 +37,10 @@ type Server struct {
 
 // New constructs a Server with the given options.
 func New(opts Options) *Server {
+	if opts.Logger == nil {
+		opts.Logger = slog.Default()
+	}
+
 	r := chi.NewRouter()
 
 	r.Use(middleware.RequestID)
@@ -47,10 +56,23 @@ func New(opts Options) *Server {
 		MaxAge:           300,
 	}))
 
+	// Attach the authenticated user (if any) to the request context.
+	// Per-handler scope checks gate individual operations; configuration
+	// and Env.js stay reachable without a token.
+	r.Use(auth.Middleware(opts.AuthProvider, opts.Logger))
+
 	// Liveness probe lives outside the OpenAPI surface so orchestrators
-	// can hit it without a token. The generated router handles everything
-	// under /api.
+	// can hit it without a token. The generated router handles
+	// everything under /api.
 	r.Get("/health", handlers.Health)
+
+	// /js/Env.js is upstream's mechanism for delivering SPA-side OIDC
+	// settings without rebuilding the bundle.
+	r.Get("/js/Env.js", EnvScript{
+		Cfg:     opts.Config,
+		Version: opts.Version,
+		Commit:  opts.Commit,
+	}.ServeHTTP)
 
 	apiServer := APIServer{
 		Build: AppInfoBuild{
@@ -71,3 +93,24 @@ func New(opts Options) *Server {
 
 // Router exposes the configured http.Handler.
 func (s *Server) Router() http.Handler { return s.router }
+
+// BuildAuthProvider returns a configured *auth.Provider, or nil when
+// cfg.OIDC.Issuer is empty (unauthenticated dev mode). Errors are
+// returned only when discovery against a configured issuer fails.
+func BuildAuthProvider(ctx context.Context, cfg *config.Config) (*auth.Provider, error) {
+	if cfg == nil || cfg.OIDC.Issuer == "" {
+		return nil, nil
+	}
+	return auth.NewProvider(ctx, auth.Config{
+		Issuer:   cfg.OIDC.Issuer,
+		Audience: cfg.OIDC.Audience,
+		Claims: auth.ClaimPaths{
+			Username:   cfg.OIDC.Claims.Username,
+			Name:       cfg.OIDC.Claims.Name,
+			Email:      cfg.OIDC.Claims.Email,
+			Privileges: cfg.OIDC.Claims.Privileges,
+			Scope:      cfg.OIDC.Claims.Scope,
+			Assertion:  cfg.OIDC.Claims.Assertion,
+		},
+	})
+}
