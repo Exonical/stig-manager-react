@@ -1,0 +1,43 @@
+/* shadcn-flavoured neutrals layered on Starlight defaults. */
+:root {
+  --sl-color-accent-low: #0c4a6e;
+  --sl-color-accent: #0284c7;
+  --sl-color-accent-high: #e0f2fe;
+
+  --sl-color-white: #ffffff;
+  --sl-color-gray-1: #eceef2;
+  --sl-color-gray-2: #c0c2c7;
+  --sl-color-gray-3: #888b96;
+  --sl-color-gray-4: #545861;
+  --sl-color-gray-5: #353841;
+  --sl-color-gray-6: #24272f;
+  --sl-color-black: #17181c;
+}
+
+:root[data-theme='light'] {
+  --sl-color-accent-low: #e0f2fe;
+  --sl-color-accent: #0369a1;
+  --sl-color-accent-high: #0c4a6e;
+}
+
+/* Slightly tighter headings, matching shadcn's typographic rhythm. */
+.sl-markdown-content :is(h1, h2, h3, h4) {
+  font-feature-settings: 'ss01';
+  letter-spacing: -0.01em;
+}
+
+/* Status pill helper used in MDX content. */
+.status-pill {
+  display: inline-block;
+  padding: 0.1rem 0.55rem;
+  border-radius: 9999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  vertical-align: middle;
+  border: 1px solid var(--sl-color-gray-5);
+  background: var(--sl-color-gray-6);
+  color: var(--sl-color-white);
+}
+.status-pill[data-tone='ok']    { border-color: #14532d; background: #14532d; color: #d1fae5; }
+.status-pill[data-tone='warn']  { border-color: #713f12; background: #713f12; color: #fef3c7; }
+.status-pill[data-tone='todo']  { border-color: #1e3a8a; background: #1e3a8a; color: #dbeafe; }

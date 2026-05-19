@@ -1,0 +1,108 @@
+---
+title: Admin Quick Start
+description: Application Manager responsibilities — keeping STIGs current, managing users and grants, exporting and restoring AppData.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components'
+
+This walks through the routine duties of a STIG Manager **Application
+Manager** (sometimes shortened to "admin" — that's the `admin` privilege
+in your OIDC provider). You should already be comfortable with the
+[user concepts and workflow](/user-guide/concepts) before working through
+this page.
+
+Beyond what a regular User can do, an App Manager can:
+
+- Import and update STIG Benchmarks.
+- Modify Collections to which they have no direct grant.
+- Manage all Users, User Groups, and Grants.
+- Export and restore Application Data.
+- Configure and run Jobs.
+- Read operational endpoints (`/op/*`).
+
+<Aside type="note">
+  The single most important responsibility is **keeping the STIG Library
+  current**. Statistics, default revisions, and the Review-matching
+  algorithm all key off the STIGs you've imported. Aim to import the DISA
+  Quarterly Library Compilations as soon as they're published.
+</Aside>
+
+## Keeping the STIG Library current
+
+<Steps>
+
+1. **Download the latest compilation** from
+   [public.cyber.mil/stigs](https://public.cyber.mil/stigs/) or
+   [cyber.mil/stigs](https://cyber.mil/stigs/).
+
+2. **Open Admin → STIG Benchmarks.**
+
+3. **Click *Import STIGs*** and select the `.zip` archive (a full
+   compilation or individual STIGs). The parser handles:
+   - Quarterly Library Compilations (zip of zips of XCCDF).
+   - SCAP data streams (`data-stream-collection`).
+   - Plain XCCDF Benchmarks.
+
+4. **Decide whether to replace existing revisions.** By default, if the
+   archive contains a revision already known to the system, it is kept as
+   is. Tick *Replace existing Revisions* to overwrite — useful when DISA
+   re-issues a revision under the same identifier.
+
+5. **Wait for the Job to complete.** Imports run as Jobs; you can navigate
+   away. Progress and per-rule warnings appear in the Job's log.
+
+</Steps>
+
+When the import finishes, every Collection that had the previous Revision
+attached automatically gains the new Revision. Reviews carry forward where
+the Rule's `(version, checkContentSha256)` is unchanged — see
+[Review Handling](/user-guide/review-handling).
+
+## Managing Users, Groups, and Grants
+
+- **Admin → Users** lists every User the system has seen (a User is
+  created on first login). You can view their grants, lastAccess, and
+  privileges from there.
+- **Admin → User Groups** lets you create and edit groups, set
+  descriptions, and add/remove members.
+- For per-Collection access, prefer to edit grants in
+  **Collection → Configuration → Grants**. The Admin Users view is for
+  troubleshooting and global cleanup.
+
+## Application Data
+
+The **Admin → App Data** page (and `/op/appdata`) lets you export the
+entire database as a single JSON file and re-import it later. This is the
+recommended interchange format between deployments — and how we migrate
+from upstream NUWCDIVNPT installs.
+
+<Aside type="caution">
+  Importing AppData **replaces** the current contents of the targeted
+  scope. Use the dry-run mode first, and take a Postgres backup before
+  applying.
+</Aside>
+
+## Jobs
+
+The **Admin → Jobs** page surfaces every scheduled or ad-hoc job. Each
+Job has Tasks, each Task has Runs. Logs and progress are live.
+
+Built-in tasks include:
+
+- Library Compilation import.
+- Periodic metrics refresh (per-Collection CORA recompute).
+- Periodic audit-log rollup.
+- AppData export.
+
+## Operational endpoints
+
+`/op/*` endpoints are reserved for App Managers:
+
+- `/op/appinfo` — cluster + node telemetry.
+- `/op/appdata` — export / import.
+- `/op/state` and `/op/state/sse` — system state stream.
+- `/op/log` — live structured logs (WebSocket).
+- `/op/configuration` — effective configuration (secrets redacted).
+- `/op/definition` — the embedded OpenAPI definition.
+
+See [Operations](/admin-guide/operations) for details.

@@ -1,0 +1,133 @@
+---
+title: Environment Variables
+description: Complete environment-variable reference for the STIG Manager API binary.
+---
+
+import { Aside } from '@astrojs/starlight/components'
+
+The Go API is configured exclusively through environment variables. This page
+is the source of truth. Variable names are preserved from upstream wherever
+the semantics match; database variables are renamed (with the upstream names
+honoured as fallbacks for compatibility).
+
+<Aside type="note">
+  All variables are read once at startup. To change a setting, set the
+  variable and restart the binary.
+</Aside>
+
+## Server
+
+| Variable                  | Default        | Description                                          |
+| ------------------------- | -------------- | ---------------------------------------------------- |
+| `STIGMAN_API_ADDRESS`     | `0.0.0.0`      | Bind address for the HTTP server.                    |
+| `STIGMAN_API_PORT`        | `54000`        | Listen port.                                         |
+| `STIGMAN_API_MAX_JSON_BODY` | `31457280` (30 MiB) | Max body size for `application/json` requests. |
+| `STIGMAN_API_MAX_UPLOAD`  | `1073741824` (1 GiB) | Max upload size for `multipart/form-data`.    |
+| `STIGMAN_API_TLS_CERT_FILE` | unset        | Path to TLS cert. If set with key, HTTPS is served. |
+| `STIGMAN_API_TLS_KEY_FILE`  | unset        | Path to TLS key.                                     |
+| `STIGMAN_API_TLS_KEY_PASSPHRASE` | unset   | Optional passphrase for the key.                     |
+| `STIGMAN_CLASSIFICATION`  | `NONE`         | Banner classification (`NONE`, `U`, `CUI`, `S`, `TS`). |
+| `STIGMAN_REQUEST_TIMEOUT` | `60s`          | Per-request timeout for non-stream endpoints.        |
+
+## Database (Postgres)
+
+| Variable                       | Default      | Description                                          |
+| ------------------------------ | ------------ | ---------------------------------------------------- |
+| `STIGMAN_DB_HOST`              | `localhost`  | Postgres host.                                       |
+| `STIGMAN_DB_PORT`              | `5432`       | Postgres port.                                       |
+| `STIGMAN_DB_NAME`              | `stigman`    | Database name. Fallback: `STIGMAN_DB_SCHEMA`.        |
+| `STIGMAN_DB_USER`              | `stigman`    | Role used to connect.                                |
+| `STIGMAN_DB_PASSWORD`          | unset        | Required unless using `peer` auth on a local socket. |
+| `STIGMAN_DB_SSLMODE`           | `prefer`     | `disable` / `require` / `verify-ca` / `verify-full`. |
+| `STIGMAN_DB_SSLROOTCERT`       | unset        | CA bundle for `verify-*`.                            |
+| `STIGMAN_DB_SSLCERT`           | unset        | Client cert (mTLS to DB).                            |
+| `STIGMAN_DB_SSLKEY`            | unset        | Client key.                                          |
+| `STIGMAN_DB_MAX_CONNECTIONS`   | `25`         | Pool size.                                           |
+| `STIGMAN_DB_MAX_IDLE`          | `5`          | Idle pool size.                                      |
+| `STIGMAN_DB_CONN_LIFETIME`     | `30m`        | Max age of a pooled connection.                      |
+| `STIGMAN_DB_REVERT`            | `false`      | If `true`, revert the most recent migration on boot. |
+
+## OIDC / JWT
+
+| Variable                          | Default                                           | Description |
+| --------------------------------- | ------------------------------------------------- | ----------- |
+| `STIGMAN_OIDC_PROVIDER`           | `http://localhost:8080/realms/stigman`            | Issuer URL. |
+| `STIGMAN_API_AUTHORITY`           | (falls back to `OIDC_PROVIDER`)                   | Override issuer just for API token validation. |
+| `STIGMAN_JWT_AUD_VALUE`           | unset                                             | If set, the `aud` claim must include this value. |
+| `STIGMAN_JWT_USERNAME_CLAIM`      | `preferred_username`                              | |
+| `STIGMAN_JWT_NAME_CLAIM`          | `name`                                            | |
+| `STIGMAN_JWT_EMAIL_CLAIM`         | `email`                                           | |
+| `STIGMAN_JWT_PRIVILEGES_CLAIM`    | `realm_access.roles`                              | |
+| `STIGMAN_JWT_SCOPE_CLAIM`         | `scope`                                           | Use `scp` for Okta / Entra ID. |
+| `STIGMAN_JWT_ASSERTION_CLAIM`     | `jti`                                             | Use `uti` for some Microsoft providers. |
+| `STIGMAN_JWT_SERVICENAME_CLAIM`   | `clientId`                                        | Used for service-account clients. |
+| `STIGMAN_JWT_ALLOWED_ALGS`        | `RS256,RS384,RS512,ES256,ES384`                   | Comma-separated allowlist. |
+| `STIGMAN_DEV_ALLOW_INSECURE_TOKENS` | `false`                                         | Development only. |
+
+## SPA-served configuration
+
+These are baked into the SPA HTML on each request as a `<script>` block:
+
+| Variable                          | Default                                           | Description |
+| --------------------------------- | ------------------------------------------------- | ----------- |
+| `STIGMAN_CLIENT_ID`               | `stig-manager`                                    | OIDC client ID. |
+| `STIGMAN_CLIENT_OIDC_PROVIDER`    | (falls back to `OIDC_PROVIDER`)                   | Issuer used by the SPA. |
+| `STIGMAN_CLIENT_API_BASE`         | `api`                                             | Path prefix (relative to origin) for API calls. |
+| `STIGMAN_CLIENT_DISABLED`         | `false`                                           | If `true`, the SPA is not served. |
+| `STIGMAN_CLIENT_DIRECTORY`        | (embedded `dist/`)                                | Override path for the SPA bundle. |
+| `STIGMAN_CLIENT_EXTRA_SCOPES`     | unset                                             | Whitespace-separated extras. |
+| `STIGMAN_CLIENT_SCOPE_PREFIX`     | unset                                             | Prefix prepended to each requested scope. |
+| `STIGMAN_CLIENT_RESPONSE_MODE`    | `fragment`                                        | `fragment` or `query`. |
+| `STIGMAN_CLIENT_REAUTH_ACTION`    | `popup`                                           | `popup` / `redirect` / `iframe`. |
+| `STIGMAN_CLIENT_STRICT_PKCE`      | `true`                                            | Require S256 PKCE on the SPA flow. |
+| `STIGMAN_CLIENT_STATE_EVENTS`     | `true`                                            | Subscribe to `/op/state/sse` from the SPA. |
+| `STIGMAN_CLIENT_CONSOLE_MODE`     | `production`                                      | `development` enables verbose console logging. |
+| `STIGMAN_CLIENT_DISPLAY_APPMANAGERS` | `true`                                         | Show admin nav for non-admin Owners. |
+| `STIGMAN_CLIENT_USER_TIMEOUT`     | `0` (disabled)                                    | Seconds of inactivity before forced re-auth. |
+| `STIGMAN_CLIENT_ADMIN_TIMEOUT`    | `0`                                               | Same but for `admin` users. |
+| `STIGMAN_CLIENT_WELCOME_IMAGE`    | unset                                             | URL of an image shown on the welcome modal. |
+| `STIGMAN_CLIENT_WELCOME_MESSAGE`  | unset                                             | Body of the welcome modal. |
+| `STIGMAN_CLIENT_WELCOME_TITLE`    | unset                                             | Title of the welcome modal. |
+| `STIGMAN_CLIENT_WELCOME_LINK`     | unset                                             | Optional learn-more link. |
+
+## Swagger UI
+
+| Variable                          | Default                                           | Description |
+| --------------------------------- | ------------------------------------------------- | ----------- |
+| `STIGMAN_SWAGGER_ENABLED`         | `false`                                           | Serve Swagger UI at `/api-docs`. |
+| `STIGMAN_SWAGGER_OIDC_PROVIDER`   | (falls back to `OIDC_PROVIDER`)                   | Issuer used by the Authorize button. |
+| `STIGMAN_SWAGGER_SERVER`          | `http://localhost:54000/api`                      | Server URL embedded in the spec. |
+| `STIGMAN_SWAGGER_REDIRECT`        | `http://localhost:54000/api-docs/oauth2-redirect.html` | OAuth redirect URI. |
+
+## Docs site
+
+| Variable                | Default                                | Description                                |
+| ----------------------- | -------------------------------------- | ------------------------------------------ |
+| `STIGMAN_DOCS_DISABLED` | `false`                                | If `true`, `/docs` is not served.          |
+| `STIGMAN_DOCS_DIRECTORY` | embedded build                       | Override path for the Astro Starlight build. |
+
+## Logging
+
+| Variable                       | Default     | Description                                  |
+| ------------------------------ | ----------- | -------------------------------------------- |
+| `STIGMAN_LOG_LEVEL`            | `info`      | `debug` / `info` / `warn` / `error`.         |
+| `STIGMAN_LOG_FORMAT`           | `json`      | `json` or `text`.                            |
+| `STIGMAN_LOG_INCLUDE_REQUEST_HEADERS` | `false` | Include selected request headers in logs.  |
+| `STIGMAN_LOG_SAMPLING_INITIAL` | `100`       | Per-second initial log sampling for hot paths. |
+| `STIGMAN_LOG_SAMPLING_THEREAFTER` | `100`    | Sampling rate after burst.                   |
+
+## Tuning
+
+| Variable                       | Default     | Description                                  |
+| ------------------------------ | ----------- | -------------------------------------------- |
+| `STIGMAN_METRICS_REFRESH`      | `60s`       | Re-compute interval for cached Collection metrics. |
+| `STIGMAN_JOBS_LEADER_TTL`      | `30s`       | Advisory-lock TTL for the job scheduler leader. |
+| `STIGMAN_SSE_KEEPALIVE`        | `15s`       | Heartbeat interval on `/op/state/sse`.        |
+| `STIGMAN_DEPENDENCY_RETRIES`   | `24`        | Retries (with backoff) for DB connectivity on boot. |
+
+## Development-only
+
+| Variable                              | Default | Description                          |
+| ------------------------------------- | ------- | ------------------------------------ |
+| `STIGMAN_DEV_RESPONSE_VALIDATION`     | `none`  | `none` / `logOnly` / `strict`.       |
+| `STIGMAN_DEV_ALLOW_INSECURE_TOKENS`   | `false` | Skips audience / kid checks.         |

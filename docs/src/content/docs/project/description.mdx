@@ -1,0 +1,87 @@
+---
+title: Project Description
+description: Purpose, scope, and relationship to the upstream NUWCDIVNPT STIG Manager project.
+---
+
+import { Aside } from '@astrojs/starlight/components'
+
+## Purpose
+
+STIG Manager is an Open Source API and Web app for managing the assessment of
+Information Systems for compliance with security checklists published by the
+United States Defense Information Systems Agency (DISA). It supports the RMF
+process by managing STIG assessments throughout the lifecycle of a system.
+Data owners can expose assessment data via role-based access control and
+track the progress of their assessment teams.
+
+This repository — [Exonical/stig-manager-react](https://github.com/Exonical/stig-manager-react)
+— is a **modern re-implementation** of the upstream
+[NUWCDIVNPT/stig-manager](https://github.com/NUWCDIVNPT/stig-manager)
+project. Goals:
+
+- **Feature parity** with upstream v1.6.10.
+- **API parity:** the OpenAPI v1 surface and all scope/role semantics are
+  preserved so existing integrations continue to work.
+- **Modern stack:** React 19 + shadcn/ui (Vite SPA) on the front, Go on the
+  back, **PostgreSQL 18** as the data store (replacing upstream's MySQL).
+
+## Relationship to upstream
+
+| Aspect             | Upstream NUWCDIVNPT/stig-manager      | This project                                |
+| ------------------ | -------------------------------------- | -------------------------------------------- |
+| Backend            | Node.js / Express                      | Go (`net/http` + `chi`)                      |
+| Database           | MySQL 8.x                              | PostgreSQL 18                                |
+| Web client         | ExtJS-based vanilla JS                 | React 19 SPA + shadcn/ui + TanStack Router   |
+| Docs               | Sphinx + ReadTheDocs                   | Astro Starlight                              |
+| API surface        | OpenAPI 3.0.1 `/api/v1`                | **Identical** (byte-compatible)              |
+| Auth               | OIDC PKCE                              | **Identical**                                |
+| License            | MIT (+ federal public domain)          | MIT                                          |
+
+We are not a fork. We re-implement against the OpenAPI spec, the SQL
+migrations, and the readthedocs feature inventory. Where features diverge,
+this site is the source of truth — please open issues against the
+[`stig-manager-react`](https://github.com/Exonical/stig-manager-react)
+repository.
+
+## Sibling project: stig-manager-next
+
+[Exonical/stig-manager-next](https://github.com/Exonical/stig-manager-next)
+is a separate sibling implementation using Next.js 15 (RSC) on the
+frontend with the same Go backend. It exists for organisations that want
+server-side rendering and a Next-style integration story.
+
+This `stig-manager-react` project is intentionally a **SPA** — no SSR,
+embeddable in the Go binary, deployable as a static site behind any CDN.
+
+## What we maintain
+
+- **The Go API binary** with embedded SPA + docs.
+- **The OpenAPI v1 spec** (synchronised with upstream).
+- **The React SPA** (this repo).
+- **The docs you're reading** (`docs/` directory).
+- **Container images** at `ghcr.io/exonical/stig-manager-react`.
+- **Helm chart** (planned) under `deploy/helm/`.
+
+## What we don't (yet) ship
+
+- Command-line watcher utility (analogous to upstream's
+  [`stigman-watcher`](https://github.com/NUWCDIVNPT/stigman-watcher`)).
+  Tracked.
+- Iron Bank delivery. Tracked.
+- Demonstration orchestration with CAC + nginx + Keycloak (analogous to
+  upstream's
+  [`stigman-orchestration`](https://github.com/NUWCDIVNPT/stigman-orchestration)).
+  Partially provided in `deploy/compose/`.
+
+## Acknowledgements
+
+Enormous thanks to the upstream STIG Manager project at NAVSEA Warfare
+Centers and to NUWCDIVNPT for funding and maintaining a quality
+open-source baseline since 2012. Their data model, API design, and review
+matching algorithm are the foundation of this implementation.
+
+<Aside>
+  Where the upstream documentation already explains a concept well, we
+  link to it. Our docs focus on this implementation's stack and any places
+  it diverges (Postgres, Go binary, React 19 SPA, shadcn UI).
+</Aside>

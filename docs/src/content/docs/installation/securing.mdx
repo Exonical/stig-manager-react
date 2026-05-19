@@ -1,0 +1,100 @@
+---
+title: Hardening & TLS
+description: Production hardening checklist for STIG Manager deployments.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components'
+
+The defaults shipped by STIG Manager are appropriate for local development.
+Before exposing a deployment to anything you don't fully trust, walk this
+checklist.
+
+## TLS
+
+<Steps>
+
+1. **Terminate TLS at a reverse proxy** ([Caddy / NGINX / Traefik
+   examples](/installation/reverse-proxy)). Do not run the binary's built-in
+   TLS in front of arbitrary clients — it's there as a fallback for air-gapped
+   single-node deployments.
+
+2. **Require TLS to Postgres** (`STIGMAN_DB_SSLMODE=verify-full`,
+   `STIGMAN_DB_SSLROOTCERT` set to your DB CA bundle).
+
+3. **Require TLS to the OIDC provider.** This is the default — only override
+   it for development.
+
+</Steps>
+
+## Authentication
+
+- Use a real OIDC provider (Keycloak / Okta / Entra ID), not the bundled
+  development one.
+- Set `STIGMAN_JWT_AUD_VALUE` to a unique audience for this deployment, then
+  configure your IdP to issue tokens with that audience for this client only.
+- Disable any client flow you don't use. The SPA needs Authorization Code +
+  PKCE; automation clients should use Device Authorization Grant or Client
+  Credentials (only for service accounts with limited scopes).
+- Keep `STIGMAN_DEV_ALLOW_INSECURE_TOKENS=false` (the default). Never enable
+  in production.
+
+## Privilege management
+
+- Grant `admin` to a tiny set of operators. Day-to-day Collection ownership
+  goes through grants, not the global `admin` privilege.
+- Audit grants regularly (`/op/appinfo` includes per-Collection role
+  counts).
+- Prefer **User Groups** over per-user grants for groups of evaluators.
+- For service accounts (scanners, CI), give them the smallest scope set that
+  works — typically `stig-manager:collection` for a specific Collection via
+  a Restricted grant with an ACL.
+
+## HTTP hygiene
+
+The reverse proxy examples already set:
+
+- `Strict-Transport-Security`
+- `X-Content-Type-Options: nosniff`
+- `Referrer-Policy: strict-origin-when-cross-origin`
+
+Additionally, the API sets a strict default CSP for the SPA HTML response
+and disables CORS for unknown origins.
+
+## Upload limits
+
+- `STIGMAN_API_MAX_JSON_BODY` — default 30 MiB. Raise only as needed.
+- `STIGMAN_API_MAX_UPLOAD` — default 1 GiB. The SPA chunks large uploads to
+  this ceiling. Lower it to whatever your scanner output sizes require.
+
+## Database hygiene
+
+- The application role needs `ALL PRIVILEGES` on its own database, **not**
+  any cluster-level privilege. Do not use a superuser.
+- Take regular base backups (`pg_basebackup`, WAL archiving). Test restores.
+- Enable `log_statement = ddl` and `log_min_duration_statement = 250` on the
+  database so slow queries and accidental migrations are auditable.
+
+## Operational endpoints
+
+- `/op/appinfo`, `/op/appdata`, `/op/log`, and `/op/audit` are reserved for
+  administrators (`admin` privilege + `stig-manager:op[:read]` scope).
+- Consider blocking `/op/*` at the reverse proxy from non-admin networks
+  altogether.
+
+## Container image
+
+- Run the image as a non-root user (the default is `uid 65532`).
+- Mount any TLS certs / DB certs **read-only**.
+- Set a read-only root filesystem; the binary writes only to the directory
+  specified by `STIGMAN_TMP_DIR` (defaults to `/tmp`).
+
+## Classification banner
+
+If your environment requires a classification banner at the top of every
+page, set `STIGMAN_CLASSIFICATION` to one of `U`, `CUI`, `S`, `TS`. The SPA
+renders a fixed colour-coded banner accordingly.
+
+<Aside type="caution">
+  The banner is a visual aid. It does **not** enforce classification on the
+  data — keep classified data in classified deployments.
+</Aside>

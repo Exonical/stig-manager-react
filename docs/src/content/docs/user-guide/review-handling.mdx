@@ -1,0 +1,96 @@
+---
+title: Review Handling & Matching
+description: How STIG Manager carries Reviews forward across STIG revisions using Rule Version + Check Content hashing.
+---
+
+import { Aside } from '@astrojs/starlight/components'
+
+STIG Manager treats STIGs as checklists composed of hundreds of individual
+Rules. Each Rule has a Check Content element that describes the actual
+check to perform.
+
+**Each Review is tracked using a key derived from the Rule's Version
+("STIG ID") and a SHA-256 of its Check Content — independent of any
+specific STIG revision.** This lets Reviews carry forward across STIG
+revisions whenever the Check Content hasn't changed.
+
+## How it works
+
+When you import a STIG revision into the Library:
+
+1. The XCCDF parser walks every Rule and computes a SHA-256 of its Check
+   Content text (whitespace-normalised but otherwise verbatim).
+2. The Rule is keyed by `(version, checkContentSha256)`.
+3. Existing Reviews for that key — regardless of which revision originally
+   produced them — are automatically associated with the new Rule.
+
+When you view the Review workspace for the new revision, every Rule shows
+the matched Review (if any). Only Rules with **changed** Check Content or
+new Version IDs need a fresh Review.
+
+## Why this matters
+
+Some other tools (STIG Viewer's matching feature) match by the
+left-hand component of `RuleId` only. That carries Reviews across
+revisions **even if the Check Content changed**, which can produce false
+"already reviewed" assertions on Rules whose check is now meaningfully
+different.
+
+The STIG Viewer User Guide cautions against using its matching feature
+freely, and explicitly notes the case STIG Manager addresses with its
+check-content-aware matching.
+
+### Concrete example
+
+Two related Rules from successive revisions differ by a single character in
+their Check Content — say, the addition of a new accepted Certificate
+Authority. The previous evaluator confirmed the old CA list was correct
+and marked the Rule **Not a Finding**. If we carried the Review forward
+naively, the new revision would also show **Not a Finding** even though
+the right answer is now different — the system could end up trusting a CA
+that the new STIG explicitly disallows.
+
+STIG Manager refuses to carry the Review forward in this case. The Rule
+appears as **Not Reviewed**, and the evaluator (or scanner) must produce a
+fresh Review against the new Check Content.
+
+## Republished Rules
+
+DISA occasionally republishes a Rule under the same `RuleId` with
+**different** content. These cases are rare (~0.014% of published Rules)
+but real. STIG Manager handles them as follows:
+
+- Only the latest version of a Rule keeps its Review.
+- Earlier revisions display the correct historical Check Content, but the
+  Review attached is whatever the latest version's Review is. Edits made
+  while viewing an old revision update the latest Review.
+
+See [Rule Exceptions](/user-guide/rule-exceptions) for the list of
+republished Rules and how to file an exception.
+
+## Comparing revisions
+
+The **STIG Compare** tool in the Library lets you diff two revisions of a
+Benchmark side-by-side. It highlights:
+
+- Rules added, removed, or renamed.
+- Rules whose Check, Fix, or Severity changed.
+- Rules whose Check Content SHA changed (i.e. Reviews will not carry
+  forward).
+
+## API view
+
+The matching algorithm is also accessible via the API:
+
+- `GET /stigs/{benchmarkId}/revisions/{revisionStr}/rules` — Rules with
+  their `version` and `checkContentSha256`.
+- `GET /collections/{id}/reviews/match?benchmarkId=…&fromRevision=…&toRevision=…`
+  — preview of which Reviews will carry forward (and which will not) for
+  a planned revision switch.
+
+<Aside>
+  This is the same algorithm used by the **Republished Rules** view in the
+  Admin guide. You can re-run it any time, even after a revision is live —
+  helpful if you discover a Check Content change was inadvertent on
+  DISA's side.
+</Aside>

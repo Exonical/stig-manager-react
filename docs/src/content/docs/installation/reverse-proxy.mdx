@@ -1,0 +1,155 @@
+---
+title: Reverse Proxy
+description: Recommended Caddy, NGINX, and Traefik configurations for fronting STIG Manager.
+---
+
+import { Tabs, TabItem, Aside } from '@astrojs/starlight/components'
+
+In production we recommend running STIG Manager behind a reverse proxy that
+terminates TLS and forwards the original client IP and protocol. The Go binary
+respects `X-Forwarded-*` headers and trust-resets are configurable.
+
+<Aside type="caution">
+  Do not enable `X-Forwarded-*` trust unless your proxy actually sets them
+  *and* strips conflicting headers from the client. The default
+  (`STIGMAN_TRUSTED_PROXIES`) is `127.0.0.1/32,::1/128`.
+</Aside>
+
+## Required forwarding
+
+| Header                | Purpose                                            |
+| --------------------- | -------------------------------------------------- |
+| `Host`                | Used in redirect URLs and CORS responses.          |
+| `X-Forwarded-Proto`   | Set to `https` so the SPA receives correct base URLs. |
+| `X-Forwarded-For`     | Client IP for audit logs.                          |
+| `X-Request-Id`        | Optional; preserved end-to-end.                    |
+| `Authorization`       | Must be forwarded untouched.                       |
+
+## SSE & WebSocket
+
+The `/op/state/sse` (Server-Sent Events) and `/op/log` (WebSocket) endpoints
+need long-lived, buffer-free proxying:
+
+- Disable response buffering on these paths.
+- Bump `proxy_read_timeout` (or equivalent) to at least 5 minutes.
+- Disable gzip/brotli on `text/event-stream`.
+
+## Example configs
+
+<Tabs>
+
+<TabItem label="Caddy">
+
+```caddyfile
+stig-manager.example.invalid {
+  encode zstd gzip
+
+  reverse_proxy /api/* http://stigman:54000
+  reverse_proxy /op/state/sse http://stigman:54000 {
+    flush_interval -1
+  }
+  reverse_proxy /op/log http://stigman:54000 {
+    flush_interval -1
+  }
+  reverse_proxy /api-docs/* http://stigman:54000
+  reverse_proxy /docs/* http://stigman:54000
+  reverse_proxy /*       http://stigman:54000
+
+  header {
+    Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+    X-Content-Type-Options    "nosniff"
+    Referrer-Policy           "strict-origin-when-cross-origin"
+  }
+}
+```
+
+</TabItem>
+
+<TabItem label="NGINX">
+
+```nginx
+server {
+  listen 443 ssl http2;
+  server_name stig-manager.example.invalid;
+
+  ssl_certificate     /etc/ssl/certs/stig-manager.pem;
+  ssl_certificate_key /etc/ssl/private/stig-manager.key;
+
+  client_max_body_size 1g;
+  proxy_read_timeout   300s;
+
+  add_header Strict-Transport-Security "max-age=63072000; includeSubDomains; preload" always;
+  add_header X-Content-Type-Options nosniff always;
+  add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+  location ^~ /op/state/sse {
+    proxy_pass http://stigman:54000;
+    proxy_http_version 1.1;
+    proxy_buffering off;
+    proxy_set_header  Connection "";
+    chunked_transfer_encoding off;
+    gzip off;
+  }
+
+  location ^~ /op/log {
+    proxy_pass http://stigman:54000;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+  }
+
+  location / {
+    proxy_pass http://stigman:54000;
+    proxy_set_header  Host              $host;
+    proxy_set_header  X-Real-IP         $remote_addr;
+    proxy_set_header  X-Forwarded-For   $proxy_add_x_forwarded_for;
+    proxy_set_header  X-Forwarded-Proto $scheme;
+  }
+}
+```
+
+</TabItem>
+
+<TabItem label="Traefik">
+
+```yaml
+http:
+  routers:
+    stigman:
+      rule: "Host(`stig-manager.example.invalid`)"
+      service: stigman
+      entryPoints: [websecure]
+      tls: { certResolver: letsencrypt }
+      middlewares: [stigman-headers]
+  middlewares:
+    stigman-headers:
+      headers:
+        stsSeconds: 63072000
+        stsIncludeSubdomains: true
+        stsPreload: true
+        contentTypeNosniff: true
+        referrerPolicy: strict-origin-when-cross-origin
+  services:
+    stigman:
+      loadBalancer:
+        servers:
+          - url: "http://stigman:54000"
+        passHostHeader: true
+```
+
+For SSE and WS endpoints, raise `forwardingTimeouts.responseHeaderTimeout`
+and disable buffering.
+
+</TabItem>
+
+</Tabs>
+
+## Path layout served by the binary
+
+| Path        | Served by         | Notes                                       |
+| ----------- | ----------------- | ------------------------------------------- |
+| `/api/v1/*` | API handlers      | JSON, JWT-authenticated.                    |
+| `/api-docs` | Swagger UI        | Disabled by default; toggle with `STIGMAN_SWAGGER_ENABLED`. |
+| `/op/*`     | Operational + SSE/WS | `/op/state/sse`, `/op/log`.              |
+| `/docs/*`   | Embedded Astro Starlight build | Disable via `STIGMAN_DOCS_DISABLED`. |
+| `/`         | Embedded React SPA | Serves `index.html` for any unmatched path so the SPA router handles routes. |

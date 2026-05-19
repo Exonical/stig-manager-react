@@ -1,0 +1,126 @@
+---
+title: Roles & Access
+description: Collection Grants, Roles, and the ACL system that controls visibility for Restricted users.
+---
+
+import { Aside } from '@astrojs/starlight/components'
+
+STIG Manager uses Role-Based Access Control (RBAC) for Collection access.
+The Collection Owner or a Manager grants Users (or User Groups) a **Role**
+in their Collection, optionally narrowed by an **ACL**.
+
+<Aside>
+  **Collection Grants are distinct from JWT Privileges.** Privileges
+  (`admin`, `create_collection`) come from your identity provider's token
+  and govern application-wide capabilities. Grants govern per-Collection
+  access and are managed inside STIG Manager.
+</Aside>
+
+## Grants
+
+A Grant is a record of a User or User Group being given a Role in a
+Collection. A given User or Group can hold Grants in many Collections, with
+different Roles in each.
+
+Each Grant has three parts:
+
+- **Grantee** — the User or Group.
+- **Role** — Restricted / Full / Manage / Owner.
+- **Access Control List** — optional rules that further constrain
+  visibility (required for Restricted; optional for higher roles).
+
+## Roles
+
+| Role        | Collection management                                                                                                                   | Default access                                | Priority |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- | -------- |
+| Owner       | Add/Remove/Modify Assets, STIG assignments, Labels, and Grants. Delete the Collection. Accept and Reject reviews from evaluators.        | Read/Write to all Reviews in the Collection.  | 4        |
+| Manage      | Same as Owner **except** creating/modifying Owner grants. May optionally Accept and Reject reviews (Collection setting).                 | Read/Write to all Reviews in the Collection.  | 3        |
+| Full        | None.                                                                                                                                    | Read/Write to all Reviews in the Collection.  | 2        |
+| Restricted  | None.                                                                                                                                    | **No default access**; comes solely from ACL. | 1        |
+
+Priority resolves conflicts when a user belongs to multiple groups.
+
+## Effective Grant
+
+When a User interacts with a Collection, STIG Manager picks an
+**Effective Grant** from the User's direct grant and the grants of every
+group they belong to. The rules:
+
+1. **Direct grants beat group grants.** If User1 has a direct grant *and*
+   is in a group with a grant, only the direct grant applies.
+2. **Among group grants, highest priority wins.** If a user is in Group1
+   (Manage) and Group2 (Full), they have Manage.
+3. **Ties merge ACLs.** If two groups grant the same Role, the user gets
+   that Role and the union of both groups' ACLs.
+
+## Access Control List
+
+Each Grant can carry an ACL: a list of **Access Rules** that say which
+Reviews the Grantee can see and edit. ACLs are essential for Restricted
+users (without one, they see nothing) and optional for higher Roles (where
+they're used to *remove* write access on a subset).
+
+### Access Rule shape
+
+| Field        | Values                                                  | Notes                                              |
+| ------------ | ------------------------------------------------------- | -------------------------------------------------- |
+| Target       | Asset / STIG / `(Asset, STIG)` pair / Label             | Pick exactly one target type per rule.             |
+| Access       | `none` / `read` / `rw`                                  | `none` is a deny rule (rare; used to override).    |
+| Label match  | `any` / `all`                                           | If target is a Label, how multi-label Assets match. |
+
+For Restricted grantees, the **effective ACL** is the union of all `read` /
+`rw` rules. For higher roles, ACL entries can only *remove* rights —
+explicit `none` rules win over the default.
+
+### Examples
+
+- **Evaluator on a single Asset, single STIG:** Restricted grant, one
+  Access Rule `(Asset = web-01, STIG = U_RHEL9, access = rw)`.
+- **Evaluator on every Asset with the "DMZ" label:** Restricted grant, one
+  Access Rule `(Label = DMZ, access = rw)`.
+- **Read-only auditor:** Full grant, one Access Rule `(scope = all, access
+  = read)`. (Or: just use the `:read` scope on their token.)
+- **Owner who can't manage one STIG:** Owner grant, one Access Rule
+  `(STIG = U_RHEL9, access = read)`.
+
+## ACL evaluation order
+
+For each `(Asset, Rule)` the API decides:
+
+1. If the User is `admin` → Owner-equivalent → allow `rw`.
+2. Compute Effective Grant.
+3. If Role is Owner / Manage / Full → start from `rw`; apply ACL entries to
+   demote.
+4. If Role is Restricted → start from `none`; apply ACL entries to
+   promote.
+5. ACL evaluation: most-specific rule wins (Asset+STIG > Asset > STIG >
+   Label).
+6. Tie-breaker: `rw` beats `read` beats `none`.
+
+The result is logged on every request (debug level) and exposed via
+`/user/effective-access?collection=…` for the SPA.
+
+## User Privileges
+
+Privileges come from your OIDC provider's token and are application-wide:
+
+| Privilege            | What it grants                                                  |
+| -------------------- | --------------------------------------------------------------- |
+| `admin`              | Implicit Owner on every Collection, plus `/op/*` write access.  |
+| `create_collection`  | Allowed to create new Collections.                              |
+
+Privileges are independent of grants — losing a privilege does not revoke
+grants, and gaining a privilege does not silently widen Collection access
+beyond the implicit-Owner rule for `admin`.
+
+## Useful API endpoints
+
+- `GET /user` — returns the caller's identity, privileges, and a summary of
+  all their grants.
+- `GET /user/effective-access?collection={id}` — pre-computed allow/deny
+  for every `(Asset, STIG)` pair (used by the SPA to render the
+  navigation).
+- `GET /collections/{id}/grants` — list grants (requires Manage+ on the
+  Collection).
+- `POST /collections/{id}/grants` — create grants.
+- `GET /collections/{id}/grants/{grantId}/acl` — list ACL entries.

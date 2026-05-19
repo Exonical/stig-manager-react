@@ -1,0 +1,117 @@
+---
+title: Features Overview
+description: Capabilities of STIG Manager — what it does, who it serves, and how it fits in.
+---
+
+import { Aside } from '@astrojs/starlight/components'
+
+## What is STIG Manager?
+
+STIG Manager is an Open Source API and Web client for managing the assessment
+of Information Systems for compliance with [security
+checklists](https://public.cyber.mil/stigs/) published by the United States
+Defense Information Systems Agency (DISA). It supports DISA checklists
+[distributed](https://public.cyber.mil/stigs/downloads/) as either a Security
+Technical Implementation Guide (STIG) or a Security Requirements Guide (SRG)
+in the XCCDF format.
+
+This re-implementation maintains feature parity with the original
+[NUWCDIVNPT/stig-manager](https://github.com/NUWCDIVNPT/stig-manager) project
+and **the same API surface** (`/api/v1`), so integrations and automation work
+unchanged.
+
+## Single Source of Truth across RMF Steps 3 and 4
+
+Throughout the RMF process, STIG Manager is the single source of truth for
+users, evaluators, managers, RMF package reviewers, ISSEs, NQVs, and
+automated tools — about Assets, STIGs, and their current assessment status. By
+letting everyone refer to the same data and reports, the RMF process can be
+executed efficiently and its progress monitored effectively. STIG Manager's
+API lets automated tools submit scan results and access data describing what
+STIGs they should be scanning.
+
+## Capabilities
+
+### STIG evaluation data, freed from `.ckl` files
+
+STIG Manager maintains a canonical set of STIGs as published by DISA and
+relates **all** Reviews to that set. Working with the data directly,
+rather than passing `.ckl` files around, eliminates several classes of
+problem: evaluators using the wrong revision, accidental severity changes,
+malformed `.ckl`s, and other issues that hamper the flow of Evaluations to
+Validators.
+
+STIG Manager imports `.ckl` files and creates Reviews matching their
+contents. Remaining gaps can be reviewed manually in the UI or filled by
+additional imports. The unified view of Evaluation progress is not tied to a
+specific `.ckl`. Properly-formed `.ckl`s are generated on demand from the
+current Evaluation state, ready for import into eMASS.
+
+### Collections, Assets, STIGs, and Reviews
+
+The primary organisational unit is the **Collection**. A Collection can
+mirror an RMF Package, a Security Assessment Plan, or anything more
+convenient (a Lab, an OS family). A Collection contains:
+
+- **Assets** — anything you evaluate (server, container image, network
+  device).
+- **STIGs** — the canonical DISA checklist revisions selected for this
+  Collection.
+- **Reviews** — one per (Asset, Rule), tracking the evaluator's finding and
+  status.
+- **Grants** — who can do what, on which Assets / STIGs, at which role.
+- **Labels** — free-form, used for filtering and reporting.
+
+### Build Collections from your existing `.ckl` files
+
+Migration to STIG Manager is intentionally easy: existing artifacts populate
+Collections. Assets, STIGs, and Reviews can come from `.ckl` files produced
+by STIG Viewer, or XCCDF results produced by the SCC tool, as well as
+manually from the Collection Configuration tab. Once a Collection is created,
+Users can be granted access to see current results per STIG, per Asset, or
+the whole Collection.
+
+### Workspaces for understanding evaluation data
+
+The client provides efficient workspaces for creating Collections, attaching
+STIGs to Assets, and assigning specific Users to evaluate them. User tasking
+is managed in real time via Collection roles with varying levels of access —
+down to specific STIGs on specific Assets.
+
+Every User gets real-time reports and statistics about their progress and the
+status of their Reviews, scoped to their level of access in each Collection.
+
+### Reviews carry forward across STIG revisions
+
+STIG Manager tracks Reviews by Rule Version and Check Content. When DISA
+publishes a new STIG revision, all Reviews for Rules with unchanged content
+are carried forward to the new revision. Evaluators focus only on Rules that
+actually changed.
+
+See [Review Handling](/user-guide/review-handling) for the matching
+algorithm.
+
+### CORA risk scoring
+
+Collection dashboards include **CORA** (Cyber Operational Risk Assessment)
+metrics that summarise residual risk by category. Severity counts, open
+findings, age-of-review, and completion percentages are all live.
+
+### Bulk operations
+
+The Collection Review workspace lets you evaluate the **same Rule across
+every Asset** that has it attached, with colour-coded status and bulk
+updates. Import and export entire Collections in one shot.
+
+### Collaborative workflow
+
+- Role-based access (Restricted / Full / Manage / Owner).
+- Accept / Reject validation by reviewers.
+- Configurable per-Collection review requirements.
+- Rule Exceptions with documented justification.
+
+### API-first
+
+A complete REST API (OpenAPI 3.0.1) enables automated scanning tools and
+custom workflows to interact with assessment data the same way the UI does.
+The API is documented [here](/reference/api).

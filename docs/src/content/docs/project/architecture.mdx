@@ -1,0 +1,153 @@
+---
+title: Architecture
+description: How the pieces fit together — Go binary, embedded React SPA, Postgres, OIDC.
+---
+
+The project is intentionally a small number of moving parts:
+
+```
+                            ┌───────────────────────────────┐
+                            │  OIDC Provider                │
+                            │  (Keycloak / Okta / Entra ID) │
+                            └──────────────┬────────────────┘
+                                           │ JWT (PKCE)
+┌────────────────────────────┐             │
+│  Browser (React 19 SPA)    │  ──REST───▶ │
+│  Vite • TS • shadcn/ui     │  ◀──SSE──── │
+│  TanStack Router/Query     │             │
+└────────────────────────────┘             │
+            ▲                              ▼
+            │ static                 ┌──────────────────────┐
+            └────────────────────────│  Go backend          │
+                                     │  chi router          │
+                                     │  oapi-codegen types  │
+                                     │  service packages    │
+                                     │  sqlc + pgx          │
+                                     └──────────┬───────────┘
+                                                │
+                                          ┌─────▼──────┐
+                                          │ Postgres 18│
+                                          └────────────┘
+```
+
+## The Go binary
+
+A single, statically linked binary (`stigman`) is the only application
+component. It:
+
+- Serves `/api/v1/*` (REST, JSON, JWT-authenticated).
+- Serves `/op/*` (operational endpoints + SSE + WebSocket).
+- Serves the **embedded React SPA** at `/` (via `embed.FS`).
+- Serves the **embedded Starlight docs** at `/docs/*`.
+- Runs an in-process **job scheduler** (leader-elected via a Postgres
+  advisory lock).
+- Runs **migrations** at startup (`pressly/goose`).
+
+All configuration comes from environment variables.
+
+### Internal layout (Go)
+
+```
+api/
+├── cmd/stigman/main.go         entrypoint
+├── api/openapi.yaml            vendored spec (single source of truth)
+├── migrations/                 *.sql goose migrations (Postgres-native)
+├── internal/
+│   ├── config/                 env-driven config
+│   ├── auth/                   JWT validation, JWKS cache, scope/role
+│   ├── httpx/                  router, middleware, errors, SSE, WS
+│   ├── handlers/               thin HTTP-layer adapters
+│   ├── service/                business logic (asset, collection, review,
+│   │                           stig, metrics, job, op, user)
+│   ├── store/                  sqlc-generated queries + dynamic builders
+│   ├── parser/                 xccdf / ckl / cklb / poam xlsx
+│   ├── jobs/                   scheduler + task registry
+│   └── embed/                  SPA + docs embedded assets
+└── go.mod
+```
+
+## The React SPA
+
+React 19 + Vite + TypeScript. Built with:
+
+- **shadcn/ui** for accessible, low-overhead UI primitives.
+- **TanStack Router** for typed, file-based routing.
+- **TanStack Query** for server state, pagination, and optimistic updates.
+- **TanStack Table & Virtual** for the large grids.
+- **oidc-client-ts** for the PKCE flow.
+- **React Hook Form + Zod** for forms.
+
+### Internal layout (frontend)
+
+```
+web/
+├── src/
+│   ├── app/                     router config, providers, layout
+│   ├── features/                feature folders mirroring upstream modules
+│   │   ├── collections/
+│   │   ├── assets/
+│   │   ├── reviews/
+│   │   ├── stigs/
+│   │   ├── library/
+│   │   ├── users/
+│   │   ├── jobs/
+│   │   ├── metrics/
+│   │   └── appinfo/
+│   ├── components/              shared UI built on shadcn
+│   ├── lib/api/                 generated TS client from openapi.yaml
+│   ├── lib/auth/                oidc-client-ts wrapper
+│   ├── styles/                  tailwind + shadcn theme
+│   └── main.tsx
+├── package.json
+└── vite.config.ts
+```
+
+## The docs site
+
+Astro Starlight (`docs/`). Built to static HTML/CSS, embedded into the Go
+binary at build time and served at `/docs/*`. The OpenAPI v1 spec is
+rendered inline via [starlight-openapi](https://github.com/HiDeoo/starlight-openapi).
+
+## Postgres data model
+
+The schema is the synthesised end-state of upstream's 47 MySQL migrations,
+translated to Postgres types. The key entities:
+
+```
+collection ─┬─< asset ───< asset_stig >─── benchmark ──< revision ──< rule
+            │                                            │
+            ├─< grant >── user_or_user_group             ├─< check_content
+            ├─< label  >── asset_label                   ├─< fix_text
+            └─< setting                                  └─< cci_ref, control_map
+
+review (asset_id, rule_id, result, detail, comment, status, history…)
+
+audit_log  job  job_run  job_task  rule_check_content_hash
+```
+
+See `api/migrations/0001_baseline.sql` for the authoritative definition.
+
+## Build and packaging
+
+A multi-stage Dockerfile:
+
+1. Build the SPA with `pnpm --filter web build` → `web/dist`.
+2. Build the docs with `pnpm --filter docs build` → `docs/dist`.
+3. Copy both into the Go build context and `go build` with
+   `-ldflags="-s -w"` and CGO disabled.
+4. Final image: `gcr.io/distroless/static-debian12:nonroot` with the
+   binary at `/stigman`.
+
+The resulting image is ~60 MB and runs as a non-root user.
+
+## Why this stack
+
+- **Go** — single static binary, easy to deploy in air-gapped sites, fast
+  enough that we don't need a separate worker for imports or exports.
+- **Postgres 18** — strict types (`jsonb`, `numeric`, generated columns),
+  excellent operational tooling, ubiquitous in restricted environments.
+- **React 19 + shadcn/ui** — modern, accessible, themeable, no heavy
+  component library.
+- **TanStack Router/Query/Table** — strongly-typed, server-driven grids
+  with virtualisation; ideal for the multi-thousand-row review grids that
+  STIG Manager regularly produces.

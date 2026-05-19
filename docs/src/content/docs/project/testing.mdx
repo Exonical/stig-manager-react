@@ -1,0 +1,52 @@
+---
+title: Testing
+description: How we test the backend, the SPA, and the docs.
+---
+
+We aim to keep the test surface dense and fast. A green CI run takes under
+five minutes on the default runner.
+
+## Backend (Go)
+
+- **Unit tests** — table-driven; each service package owns its own
+  fakes/mocks. `go test ./...` runs them all.
+- **Integration tests** — exercise handlers against a real Postgres via
+  [testcontainers-go](https://golang.testcontainers.org). Tagged with
+  `//go:build integration` so they're optional locally.
+- **OpenAPI conformance** — every handler response is validated against
+  the spec using [`kin-openapi`](https://github.com/getkin/kin-openapi)
+  in a test helper.
+- **Parser corpus tests** — `internal/parser/testdata/` contains real
+  DISA XCCDF / CKL / CKLB samples. Tests assert round-trip stability.
+
+```bash
+go test ./...                       # unit
+go test -tags=integration ./...     # unit + integration (needs Docker)
+go test -bench=. ./internal/parser  # parser benchmarks
+```
+
+## Frontend (React)
+
+- **Vitest + Testing Library** for components, hooks, and pure utilities.
+- **Playwright** end-to-end tests against the full docker-compose stack
+  (`pnpm --filter web e2e`).
+
+```bash
+pnpm --filter web test          # vitest watch
+pnpm --filter web test:ci       # vitest run + coverage
+pnpm --filter web e2e           # playwright
+```
+
+## Docs
+
+- `pnpm --filter docs build` — must succeed without warnings.
+- `pnpm --filter docs lint:links` — checks every internal and external
+  link. External links are checked with a tight timeout and a small
+  retry; failures are surfaced but only blocking on internal links.
+
+## Performance budgets
+
+- API: p95 < 200 ms for all read endpoints with a 10k-Rule Collection.
+- SPA: Lighthouse Performance score ≥ 90 on a cold cache.
+
+CI enforces these on the default branch.

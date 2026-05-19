@@ -1,0 +1,72 @@
+---
+title: Logging
+description: Log format, levels, request lifecycle, and the live log socket.
+---
+
+The Go binary logs to stdout as **structured JSON** by default. Set
+`STIGMAN_LOG_FORMAT=text` for human-friendly output during local development.
+
+## Levels
+
+| Level | When to use                                                          |
+| ----- | -------------------------------------------------------------------- |
+| `debug` | Verbose internal state. Off in production.                         |
+| `info`  | Default. Request summaries, lifecycle events, migration progress.  |
+| `warn`  | Recoverable issues — DB retries, deprecated configs, slow queries. |
+| `error` | Request failures with non-4xx status, panics, integrity issues.    |
+
+Set with `STIGMAN_LOG_LEVEL`.
+
+## Schema
+
+Every log line is a flat JSON object with at minimum:
+
+```json
+{
+  "ts":        "2026-05-19T06:07:00.123Z",
+  "level":     "info",
+  "msg":       "request",
+  "component": "http",
+  "method":    "GET",
+  "path":      "/api/v1/collections/42/assets",
+  "status":    200,
+  "durMs":     17,
+  "reqBytes":  0,
+  "respBytes": 8412,
+  "user":      "stigadmin",
+  "scopes":    ["stig-manager:collection:read"],
+  "reqId":     "01HQ…",
+  "client":    "stig-manager"
+}
+```
+
+Additional fields appear depending on the event:
+
+- **`event=migrate.applied`** — `migration`, `direction`, `durMs`.
+- **`event=auth.reject`** — `reason`, `kid`, `iss`, `aud`.
+- **`event=audit`** — `action`, `target`, `before`, `after`.
+
+## Request IDs
+
+Every request is assigned a [ULID](https://github.com/ulid/spec) `reqId`. If
+the caller already sends `X-Request-Id` or `Traceparent`, that value is
+honoured and echoed back in the response headers.
+
+## The live log socket
+
+Admins can tail logs over WebSocket at `/op/log` (requires
+`stig-manager:op:read`). The SPA exposes this via the **Admin → Live Logs**
+view. The socket emits the same JSON objects as stdout, prefixed by a
+`startup` snapshot message containing version and config (redacted).
+
+## Audit log
+
+Mutating operations (writes to Collections, grants, users, reviews, jobs)
+also write to the `audit_log` table. The full audit log is accessible at
+`/op/audit` for admins, and per-Collection summaries are accessible to
+Collection Owners at `/collections/{id}/audit`.
+
+## Configuration variables
+
+See [Environment Variables → Logging](/installation/environment-variables#logging)
+for the full list.
