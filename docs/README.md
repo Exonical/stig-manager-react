@@ -5,15 +5,17 @@ Astro Starlight documentation site for [stig-manager-react](https://github.com/E
 ## Local development
 
 ```bash
-pnpm install            # from repo root
-pnpm --filter docs dev  # http://127.0.0.1:4321
+cd docs
+pnpm install
+pnpm dev  # http://127.0.0.1:4321
 ```
 
 ## Build
 
 ```bash
-pnpm --filter docs build   # output: docs/dist/
-pnpm --filter docs preview # preview the built site
+cd docs
+pnpm build   # output: docs/dist/
+pnpm preview # preview the built site
 ```
 
 ## Structure

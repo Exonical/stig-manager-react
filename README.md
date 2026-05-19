@@ -20,22 +20,23 @@ Milestone 0, the documentation site.
 ├── web/                  React 19 SPA                   (Milestone 1+)
 ├── deploy/               Docker / Compose / Helm        (Milestone 1+)
 ├── tools/                supporting scripts             (later)
-├── .github/workflows/    CI
-└── pnpm-workspace.yaml   pnpm workspace definition
+└── .github/workflows/    CI
 ```
 
 ## Quick start (docs)
 
 ```bash
+cd docs
 pnpm install
-pnpm --filter docs dev
+pnpm dev
 # open http://127.0.0.1:4321
 ```
 
 To build the static site:
 
 ```bash
-pnpm --filter docs build
+cd docs
+pnpm build
 # output: docs/dist/
 ```
 
