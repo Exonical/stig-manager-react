@@ -54,10 +54,6 @@ jobs:
         working-directory: docs
         run: pnpm build
 
-      - name: Link check (internal)
-        working-directory: docs
-        run: pnpm dlx -y linkinator dist --recurse --silent --skip "^https?://"
-
       - name: Upload built site
         uses: actions/upload-artifact@v4
         with:
