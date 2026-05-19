@@ -1,0 +1,7 @@
+package: api
+output: types.gen.go
+generate:
+  models: true
+output-options:
+  skip-prune: true
+  user-templates: {}

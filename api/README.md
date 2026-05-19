@@ -2,12 +2,13 @@
 
 Go HTTP API server for [stig-manager-react](https://github.com/Exonical/stig-manager-react).
 
-- Go 1.23, [`chi`](https://github.com/go-chi/chi) router, structured logging
+- Go 1.26, [`chi`](https://github.com/go-chi/chi) router, structured logging
   via `log/slog`.
 - [`pgx`](https://github.com/jackc/pgx) v5 for Postgres 18.
-- OpenAPI v1 surface (currently stubbed: `/api/v1/op/appinfo`,
-  `/api/v1/op/appdata/tables`). Code-generated handlers from
-  `docs/openapi/stig-manager.yaml` arrive in Milestone 2.
+- OpenAPI v1 surface served at `/api/*`, generated from
+  `docs/openapi/stig-manager.yaml` by [`oapi-codegen`](https://github.com/oapi-codegen/oapi-codegen).
+  All 150+ operations are wired up; unimplemented endpoints return 501
+  until real handlers land in later milestones.
 
 ## Local development
 
@@ -23,7 +24,7 @@ Smoke test:
 
 ```bash
 curl -s http://localhost:54001/health
-curl -s http://localhost:54001/api/v1/op/appinfo | jq
+curl -s http://localhost:54001/api/op/appinfo | jq
 ```
 
 ## Test, lint, build
@@ -40,12 +41,18 @@ go build ./...
 api/
 ├── cmd/stigman/main.go        program entrypoint
 ├── internal/
+│   ├── api/                   oapi-codegen generated types + chi router
+│   │   ├── gen.go             go:generate directives
+│   │   ├── server-config.yaml oapi-codegen config (chi server)
+│   │   ├── types-config.yaml  oapi-codegen config (models)
+│   │   ├── server.gen.go      generated chi router
+│   │   └── types.gen.go       generated request/response types
 │   ├── config/                env-based configuration
-│   ├── handlers/              HTTP handlers (scaffold)
-│   ├── server/                router wiring
+│   ├── handlers/              top-level handlers (e.g. /health)
+│   ├── server/                router wiring + APIServer overrides
 │   └── store/                 Postgres data layer (scaffold)
 ├── go.mod
-└── Dockerfile                 multi-stage distroless build
+└── Containerfile              OCI multi-stage distroless build
 ```
 
 ## Environment

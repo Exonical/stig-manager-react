@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'web/**'
+      - 'docs/openapi/**'
       - 'pnpm-workspace.yaml'
       - 'pnpm-lock.yaml'
       - 'package.json'
@@ -12,6 +13,7 @@ on:
   pull_request:
     paths:
       - 'web/**'
+      - 'docs/openapi/**'
       - 'pnpm-workspace.yaml'
       - 'pnpm-lock.yaml'
       - 'package.json'
@@ -26,7 +28,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  NODE_VERSION: '22'
+  NODE_VERSION: '24'
   PNPM_VERSION: '9'
 
 jobs:
@@ -48,6 +50,15 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Verify generated types are up to date
+        run: |
+          pnpm --filter @stig-manager-react/web gen:api
+          if ! git diff --quiet -- web/src/lib/api/schema.ts; then
+            echo "::error::generated types are out of date — run 'pnpm --filter web gen:api' and commit"
+            git --no-pager diff -- web/src/lib/api/schema.ts
+            exit 1
+          fi
 
       - name: Lint
         run: pnpm --filter @stig-manager-react/web lint

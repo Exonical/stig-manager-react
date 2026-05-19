@@ -35,7 +35,7 @@ The project is intentionally a small number of moving parts:
 A single, statically linked binary (`stigman`) is the only application
 component. It:
 
-- Serves `/api/v1/*` (REST, JSON, JWT-authenticated).
+- Serves `/api/*` (REST, JSON, JWT-authenticated).
 - Serves `/op/*` (operational endpoints + SSE + WebSocket).
 - Serves the **embedded React SPA** at `/` (via `embed.FS`).
 - Serves the **embedded Starlight docs** at `/docs/*`.
@@ -129,7 +129,8 @@ See `api/migrations/0001_baseline.sql` for the authoritative definition.
 
 ## Build and packaging
 
-A multi-stage Dockerfile:
+A multi-stage [OCI Containerfile](https://github.com/opencontainers/image-spec)
+(built with Docker, Podman, or Buildah):
 
 1. Build the SPA with `pnpm --filter web build` → `web/dist`.
 2. Build the docs with `pnpm --filter docs build` → `docs/dist`.

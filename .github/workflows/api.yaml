@@ -5,10 +5,12 @@ on:
     branches: [main]
     paths:
       - 'api/**'
+      - 'docs/openapi/**'
       - '.github/workflows/api.yaml'
   pull_request:
     paths:
       - 'api/**'
+      - 'docs/openapi/**'
       - '.github/workflows/api.yaml'
   workflow_dispatch:
 
@@ -20,7 +22,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  GO_VERSION: '1.25.4'
+  GO_VERSION: '1.26.3'
 
 jobs:
   build:
@@ -40,6 +42,15 @@ jobs:
 
       - name: Go module verify
         run: go mod download && go mod verify
+
+      - name: Verify generated code is up to date
+        run: |
+          go generate ./internal/api
+          if ! git diff --quiet -- internal/api; then
+            echo "::error::generated code is out of date — run 'go generate ./internal/api' from api/ and commit"
+            git --no-pager diff -- internal/api
+            exit 1
+          fi
 
       - name: Vet
         run: go vet ./...

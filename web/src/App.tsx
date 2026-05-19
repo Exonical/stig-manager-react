@@ -86,7 +86,7 @@ function App() {
             <CardHeader>
               <CardTitle>API connectivity</CardTitle>
               <CardDescription>
-                Calls <code>GET /api/v1/op/appinfo</code> on the Go backend
+                Calls <code>GET /api/op/appinfo</code> on the Go backend
                 through the Vite dev proxy.
               </CardDescription>
             </CardHeader>

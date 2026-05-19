@@ -148,7 +148,7 @@ and disable buffering.
 
 | Path        | Served by         | Notes                                       |
 | ----------- | ----------------- | ------------------------------------------- |
-| `/api/v1/*` | API handlers      | JSON, JWT-authenticated.                    |
+| `/api/*` | API handlers      | JSON, JWT-authenticated.                    |
 | `/api-docs` | Swagger UI        | Disabled by default; toggle with `STIGMAN_SWAGGER_ENABLED`. |
 | `/op/*`     | Operational + SSE/WS | `/op/state/sse`, `/op/log`.              |
 | `/docs/*`   | Embedded Astro Starlight build | Disable via `STIGMAN_DOCS_DISABLED`. |
