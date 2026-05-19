@@ -17,6 +17,12 @@ export default defineConfig({
         target: process.env.VITE_API_PROXY_TARGET ?? 'http://localhost:54001',
         changeOrigin: false,
       },
+      // The API renders /js/Env.js at runtime with OIDC settings; the
+      // SPA's index.html loads it before the React bundle.
+      '/js/Env.js': {
+        target: process.env.VITE_API_PROXY_TARGET ?? 'http://localhost:54001',
+        changeOrigin: false,
+      },
     },
   },
 })

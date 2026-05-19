@@ -46,14 +46,24 @@ func run() error {
 		"commit", commit,
 		"build_date", buildDate,
 		"addr", cfg.HTTPAddr,
+		"oidc_issuer", cfg.OIDC.Issuer,
 	)
 
+	authProvider, err := server.BuildAuthProvider(context.Background(), cfg)
+	if err != nil {
+		return fmt.Errorf("auth provider: %w", err)
+	}
+	if authProvider == nil {
+		logger.Warn("running without OIDC; protected endpoints will 401")
+	}
+
 	srv := server.New(server.Options{
-		Logger:    logger,
-		Version:   version,
-		Commit:    commit,
-		BuildDate: buildDate,
-		Config:    cfg,
+		Logger:       logger,
+		Version:      version,
+		Commit:       commit,
+		BuildDate:    buildDate,
+		Config:       cfg,
+		AuthProvider: authProvider,
 	})
 
 	httpServer := &http.Server{
