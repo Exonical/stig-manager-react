@@ -2,10 +2,12 @@ package server
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 
 	"github.com/Exonical/stig-manager-react/api/internal/api"
 	"github.com/Exonical/stig-manager-react/api/internal/auth"
+	"github.com/Exonical/stig-manager-react/api/internal/store"
 )
 
 // APIServer is the concrete implementation of api.ServerInterface used by
@@ -13,13 +15,38 @@ import (
 // supplied 501 stub for every operation) and overrides individual methods
 // as features land.
 //
-// Through Milestone 4 the only overrides are the operational endpoints
-// (`/api/op/appinfo`, `/api/op/configuration`). Real
-// STIG/Collection/Asset handlers arrive in later milestones.
+// As of Milestone 4 the overrides are: the operational endpoints
+// (`/api/op/appinfo`, `/api/op/configuration`) and a first slice of
+// the collections surface (list, get, create).
 type APIServer struct {
 	api.Unimplemented
 
 	Build AppInfoBuild
+
+	// Logger is used for unexpected handler errors. Optional; falls
+	// back to slog.Default when nil.
+	Logger *slog.Logger
+
+	// MigrationVersion is the version of the most recently applied
+	// database migration at server start-up. Exposed via
+	// /api/op/configuration. Zero when migrations were not run.
+	MigrationVersion int64
+
+	// Users persists / refreshes the app_user row for each
+	// authenticated principal. Optional: when nil the create
+	// endpoint returns 503.
+	Users *store.UserRepo
+	// Collections is the data-layer entry point for the collections
+	// endpoints. Optional with the same fall-back semantics as Users.
+	Collections *store.CollectionRepo
+}
+
+func (s APIServer) logErr(r *http.Request, op string, err error) {
+	logger := s.Logger
+	if logger == nil {
+		logger = slog.Default()
+	}
+	logger.ErrorContext(r.Context(), op, "err", err, "path", r.URL.Path)
 }
 
 // AppInfoBuild captures build-time stamping for the appinfo endpoint.
@@ -73,9 +100,9 @@ func (s APIServer) GetAppInfo(w http.ResponseWriter, r *http.Request, _ api.GetA
 // reachable without a token — so OIDC settings discovered here can be
 // used by the SPA to start a login.
 //
-// The response shape matches upstream's ApiConfiguration. Fields that
-// are populated by the database layer (lastMigration) stay zero-valued
-// until Milestone 4 wires them up.
+// The response shape matches upstream's ApiConfiguration; lastMigration
+// reflects the most-recently-applied goose version observed at server
+// start.
 func (s APIServer) GetConfiguration(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"version":        "v1",
@@ -83,6 +110,7 @@ func (s APIServer) GetConfiguration(w http.ResponseWriter, _ *http.Request) {
 		"commit": map[string]any{
 			"sha": s.Build.Commit,
 		},
+		"lastMigration": s.MigrationVersion,
 	})
 }
 

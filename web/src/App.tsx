@@ -10,7 +10,12 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
-import { fetchAppInfo, type AppInfo } from '@/lib/api'
+import {
+  fetchAppInfo,
+  fetchCollections,
+  type AppInfo,
+  type CollectionSummary,
+} from '@/lib/api'
 import { useAuth } from '@/lib/auth/auth-context'
 
 type AppInfoState =
@@ -19,8 +24,17 @@ type AppInfoState =
   | { status: 'ok'; data: AppInfo }
   | { status: 'error'; message: string }
 
+type CollectionsState =
+  | { status: 'idle' }
+  | { status: 'loading' }
+  | { status: 'ok'; data: CollectionSummary[] }
+  | { status: 'error'; message: string }
+
 function App() {
   const [appInfo, setAppInfo] = React.useState<AppInfoState>({ status: 'idle' })
+  const [collections, setCollections] = React.useState<CollectionsState>({
+    status: 'idle',
+  })
 
   async function loadAppInfo() {
     setAppInfo({ status: 'loading' })
@@ -29,6 +43,19 @@ function App() {
       setAppInfo({ status: 'ok', data })
     } catch (err) {
       setAppInfo({
+        status: 'error',
+        message: err instanceof Error ? err.message : 'unknown error',
+      })
+    }
+  }
+
+  async function loadCollections() {
+    setCollections({ status: 'loading' })
+    try {
+      const data = await fetchCollections()
+      setCollections({ status: 'ok', data })
+    } catch (err) {
+      setCollections({
         status: 'error',
         message: err instanceof Error ? err.message : 'unknown error',
       })
@@ -54,13 +81,13 @@ function App() {
 
       <main className="mx-auto max-w-6xl px-6 py-16">
         <section className="space-y-4 pb-12">
-          <h1 className="text-4xl font-bold tracking-tight">Milestone 3</h1>
+          <h1 className="text-4xl font-bold tracking-tight">Milestone 4</h1>
           <p className="max-w-2xl text-[var(--color-muted-foreground)]">
-            OIDC PKCE auth is wired end-to-end: the SPA reads OIDC settings
-            from <code>/js/Env.js</code>, completes a PKCE login against the
-            configured provider, and attaches the access token to API
-            requests. The Go API validates tokens against the issuer's
-            JWKS and enforces per-route scopes.
+            The API now talks to Postgres through pgx and runs goose
+            migrations on start-up. The first slice of the collections
+            surface (list / get / create) is wired through the auth
+            middleware so the SPA can read them with the
+            <code> stig-manager:collection:read</code> scope.
           </p>
         </section>
 
@@ -114,6 +141,38 @@ function App() {
               {appInfo.status === 'error' && (
                 <p className="text-sm text-[var(--color-destructive)]">
                   {appInfo.message}
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Collections</CardTitle>
+              <CardDescription>
+                Calls <code>GET /api/collections</code> (requires the
+                <code> stig-manager:collection:read</code> scope).
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <Button
+                onClick={loadCollections}
+                disabled={collections.status === 'loading'}
+              >
+                {collections.status === 'loading'
+                  ? 'Loading…'
+                  : 'List collections'}
+              </Button>
+              {collections.status === 'ok' && (
+                <pre className="max-h-48 overflow-auto rounded-md bg-[var(--color-secondary)] p-3 text-xs">
+                  {collections.data.length === 0
+                    ? 'No collections yet.'
+                    : JSON.stringify(collections.data, null, 2)}
+                </pre>
+              )}
+              {collections.status === 'error' && (
+                <p className="text-sm text-[var(--color-destructive)]">
+                  {collections.message}
                 </p>
               )}
             </CardContent>

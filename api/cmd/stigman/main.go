@@ -13,7 +13,9 @@ import (
 	"time"
 
 	"github.com/Exonical/stig-manager-react/api/internal/config"
+	"github.com/Exonical/stig-manager-react/api/internal/migrations"
 	"github.com/Exonical/stig-manager-react/api/internal/server"
+	"github.com/Exonical/stig-manager-react/api/internal/store"
 )
 
 // version, commit, and buildDate are stamped by the build via -ldflags.
@@ -57,13 +59,41 @@ func run() error {
 		logger.Warn("running without OIDC; protected endpoints will 401")
 	}
 
+	var (
+		pool             *store.Pool
+		migrationVersion int64
+	)
+	if cfg.DatabaseURL != "" {
+		bootCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		pool, err = store.Open(bootCtx, cfg.DatabaseURL)
+		if err != nil {
+			return fmt.Errorf("open database: %w", err)
+		}
+		defer pool.Close()
+		logger.Info("database connected")
+		if err := migrations.Migrate(bootCtx, pool); err != nil {
+			return fmt.Errorf("run migrations: %w", err)
+		}
+		v, err := migrations.Version(bootCtx, pool)
+		if err != nil {
+			return fmt.Errorf("read migration version: %w", err)
+		}
+		migrationVersion = v
+		logger.Info("database migrated", "version", v)
+	} else {
+		logger.Warn("running without STIGMAN_DATABASE_URL; database-backed handlers will degrade")
+	}
+
 	srv := server.New(server.Options{
-		Logger:       logger,
-		Version:      version,
-		Commit:       commit,
-		BuildDate:    buildDate,
-		Config:       cfg,
-		AuthProvider: authProvider,
+		Logger:           logger,
+		Version:          version,
+		Commit:           commit,
+		BuildDate:        buildDate,
+		Config:           cfg,
+		AuthProvider:     authProvider,
+		Pool:             pool,
+		MigrationVersion: migrationVersion,
 	})
 
 	httpServer := &http.Server{

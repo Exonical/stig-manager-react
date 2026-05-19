@@ -1,12 +1,13 @@
-// Package store is the scaffold for the Postgres 18 data layer.
+// Package store is the Postgres 18 data layer.
 //
-// Real query implementations and the goose-managed Postgres baseline arrive
-// in Milestone 2. This package currently only exposes a typed pgx pool
-// constructor so deployments can verify connectivity end-to-end.
+// Open() constructs a pgxpool; repository types (UserRepo,
+// CollectionRepo, …) wrap it with operation-shaped methods that
+// return domain structs (AppUser, Collection, …).
 package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -15,6 +16,14 @@ import (
 
 // Pool wraps a pgxpool.Pool.
 type Pool = pgxpool.Pool
+
+// ErrNotFound is returned by repository getters when the requested
+// row does not exist.
+var ErrNotFound = errors.New("store: not found")
+
+// ErrDuplicateName is returned by CollectionRepo.Create when a
+// collection with the same case-insensitive name is already enabled.
+var ErrDuplicateName = errors.New("store: duplicate collection name")
 
 // Open creates and pings a Postgres connection pool.
 func Open(ctx context.Context, dsn string) (*Pool, error) {

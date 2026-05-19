@@ -39,11 +39,19 @@ The Keycloak realm `stigman` is imported at start-up from
 | `evaluator` | `evaluator` | no realm role; collection grants in app |
 
 > **Note:** the SPA → API → Postgres path is wired and the full
-> `/api/*` OpenAPI surface (150+ operations) is generated and mounted,
-> but everything except `/api/op/appinfo` and `/api/op/configuration`
-> returns `501 Not Implemented` until real handlers land in subsequent
-> milestones. `/api/op/appinfo` requires the
-> `stig-manager:op:read` scope; `/api/op/configuration` is public.
+> `/api/*` OpenAPI surface (150+ operations) is generated and mounted.
+> As of Milestone 4 the implemented operations are:
+>
+> - `GET /api/op/configuration` (public)
+> - `GET /api/op/appinfo` (requires `stig-manager:op:read`)
+> - `GET /api/collections` (requires `stig-manager:collection:read`)
+> - `GET /api/collections/{id}` (requires `stig-manager:collection:read`)
+> - `POST /api/collections` (requires `stig-manager:collection`)
+>
+> Every other operation still returns `501 Not Implemented`. On
+> start-up the API connects to Postgres, runs the goose migrations
+> baked into the binary, and exposes the resulting schema version
+> via `lastMigration` on `/api/op/configuration`.
 
 ## Kubernetes / production
 

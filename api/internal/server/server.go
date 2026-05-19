@@ -10,11 +10,13 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Exonical/stig-manager-react/api/internal/api"
 	"github.com/Exonical/stig-manager-react/api/internal/auth"
 	"github.com/Exonical/stig-manager-react/api/internal/config"
 	"github.com/Exonical/stig-manager-react/api/internal/handlers"
+	"github.com/Exonical/stig-manager-react/api/internal/store"
 )
 
 // Options describes inputs needed to construct a Server.
@@ -27,6 +29,13 @@ type Options struct {
 	// AuthProvider validates access tokens. When nil the server runs
 	// without authentication; protected endpoints will 401.
 	AuthProvider *auth.Provider
+	// Pool is the Postgres connection pool. Optional: when nil, the
+	// database-backed handlers degrade gracefully (collections list
+	// returns [], get/create return 404/503).
+	Pool *pgxpool.Pool
+	// MigrationVersion is the version of the most recently applied
+	// goose migration, surfaced via /api/op/configuration.
+	MigrationVersion int64
 }
 
 // Server holds the HTTP router and its dependencies.
@@ -80,6 +89,12 @@ func New(opts Options) *Server {
 			Commit:    opts.Commit,
 			BuildDate: opts.BuildDate,
 		},
+		Logger:           opts.Logger,
+		MigrationVersion: opts.MigrationVersion,
+	}
+	if opts.Pool != nil {
+		apiServer.Users = store.NewUserRepo(opts.Pool)
+		apiServer.Collections = store.NewCollectionRepo(opts.Pool)
 	}
 
 	// Register the generated handlers directly onto the root chi router
