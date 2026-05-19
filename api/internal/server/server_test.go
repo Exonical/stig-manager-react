@@ -208,17 +208,27 @@ func TestAppInfo_RequiresScope(t *testing.T) {
 	}
 }
 
-// TestUnimplementedReturns501 confirms that every operation we have not yet
-// overridden returns a 501 Not Implemented from api.Unimplemented (the
-// generator-supplied default) rather than a 404 or a panic.
-//
-// /collections has only optional query parameters, so it bypasses the
+// TestUnimplementedReturns501 confirms that operations we have not yet
+// overridden still fall through to the api.Unimplemented 501 stub.
+// /stigs has only optional query parameters, so it bypasses the
 // generated 400 validation layer and exercises Unimplemented directly.
+// A valid bearer token is required because the auth middleware gates
+// every /api/* operation that declares a security requirement.
 func TestUnimplementedReturns501(t *testing.T) {
 	t.Parallel()
+	fx := newOIDCFixture(t)
+	prov, err := auth.NewProvider(context.Background(), auth.Config{
+		Issuer: fx.issuer, Audience: "stig-manager",
+	})
+	if err != nil {
+		t.Fatalf("provider: %v", err)
+	}
+	handler := newTestServer(t, withAuth(prov))
+
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/collections", nil)
-	newTestServer(t).ServeHTTP(rec, req)
+	req := httptest.NewRequest(http.MethodGet, "/api/stigs", nil)
+	req.Header.Set("Authorization", "Bearer "+fx.token(t, "stig-manager:stig:read"))
+	handler.ServeHTTP(rec, req)
 	if got := rec.Result().StatusCode; got != http.StatusNotImplemented {
 		t.Fatalf("status: got %d want %d (body=%s)", got, http.StatusNotImplemented, rec.Body.String())
 	}

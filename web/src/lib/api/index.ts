@@ -32,3 +32,25 @@ export async function fetchAppInfo(): Promise<AppInfo> {
   }
   return result.data as unknown as AppInfo
 }
+
+/**
+ * Collection summary returned by `GET /collections`. Mirrors the
+ * Collection schema in docs/openapi/stig-manager.yaml.
+ */
+export type CollectionSummary = {
+  collectionId: string
+  name: string
+  description?: string | null
+  metadata?: Record<string, string>
+}
+
+/**
+ * Lists Collections visible to the signed-in user.
+ */
+export async function fetchCollections(): Promise<CollectionSummary[]> {
+  const result = await apiClient.GET('/collections', {})
+  if (!result.response.ok || !result.data) {
+    throw new Error(`collections: HTTP ${result.response.status}`)
+  }
+  return result.data as unknown as CollectionSummary[]
+}
