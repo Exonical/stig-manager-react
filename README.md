@@ -4,7 +4,7 @@ A modern re-implementation of
 [NUWCDIVNPT/stig-manager](https://github.com/NUWCDIVNPT/stig-manager):
 
 - **Frontend:** React 19 + Vite + TypeScript + [shadcn/ui](https://ui.shadcn.com).
-- **Backend:** Go 1.25 (`net/http` + `chi`), OpenAPI 3.0.1 v1 — byte-compatible with upstream.
+- **Backend:** Go 1.26 (`net/http` + `chi`), OpenAPI 3.0.1 v1 — byte-compatible with upstream.
 - **Database:** PostgreSQL 18 (via pgx v5).
 - **Auth:** OIDC / OAuth 2.0 PKCE (Keycloak / Okta / Azure Entra ID).
 - **Docs:** [Astro Starlight](https://starlight.astro.build/) (this repo's `docs/`).
@@ -24,8 +24,8 @@ A modern re-implementation of
 
 ## Prerequisites
 
-- **Node.js 22** and **pnpm 9** (via [Corepack](https://nodejs.org/api/corepack.html)).
-- **Go 1.25** for the API.
+- **Node.js 24** and **pnpm 9** (via [Corepack](https://nodejs.org/api/corepack.html)).
+- **Go 1.26** for the API.
 - **Docker / Docker Compose** for the integrated dev stack.
 
 ## Quick start (everything via compose)

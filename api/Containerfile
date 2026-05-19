@@ -1,5 +1,15 @@
+# OCI image build for the STIG Manager API.
+#
+# This Containerfile follows the Open Container Initiative image-spec
+# (https://github.com/opencontainers/image-spec). The syntax is the same
+# format Docker uses; Podman, Buildah, and BuildKit also build it natively.
+#
+# Build with either:
+#   podman build -t stigman-api -f api/Containerfile api/
+#   docker build -t stigman-api -f api/Containerfile api/
+
 # syntax=docker/dockerfile:1.7
-FROM golang:1.23-alpine AS build
+FROM docker.io/library/golang:1.26.3-alpine AS build
 WORKDIR /src
 
 COPY go.mod go.sum ./

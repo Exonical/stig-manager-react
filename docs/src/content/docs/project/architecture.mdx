@@ -129,7 +129,8 @@ See `api/migrations/0001_baseline.sql` for the authoritative definition.
 
 ## Build and packaging
 
-A multi-stage Dockerfile:
+A multi-stage [OCI Containerfile](https://github.com/opencontainers/image-spec)
+(built with Docker, Podman, or Buildah):
 
 1. Build the SPA with `pnpm --filter web build` → `web/dist`.
 2. Build the docs with `pnpm --filter docs build` → `docs/dist`.

@@ -1,6 +1,6 @@
 module github.com/Exonical/stig-manager-react/api
 
-go 1.25.0
+go 1.26.3
 
 require (
 	github.com/getkin/kin-openapi v0.135.0

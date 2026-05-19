@@ -2,7 +2,7 @@
 
 Go HTTP API server for [stig-manager-react](https://github.com/Exonical/stig-manager-react).
 
-- Go 1.25, [`chi`](https://github.com/go-chi/chi) router, structured logging
+- Go 1.26, [`chi`](https://github.com/go-chi/chi) router, structured logging
   via `log/slog`.
 - [`pgx`](https://github.com/jackc/pgx) v5 for Postgres 18.
 - OpenAPI v1 surface served at `/api/*`, generated from
@@ -52,7 +52,7 @@ api/
 │   ├── server/                router wiring + APIServer overrides
 │   └── store/                 Postgres data layer (scaffold)
 ├── go.mod
-└── Dockerfile                 multi-stage distroless build
+└── Containerfile              OCI multi-stage distroless build
 ```
 
 ## Environment

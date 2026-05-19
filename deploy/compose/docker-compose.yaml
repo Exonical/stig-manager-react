@@ -44,7 +44,7 @@ services:
   api:
     build:
       context: ../../api
-      dockerfile: Dockerfile
+      dockerfile: Containerfile
     restart: unless-stopped
     depends_on:
       postgres:
@@ -60,7 +60,7 @@ services:
   web:
     build:
       context: ../..
-      dockerfile: web/Dockerfile
+      dockerfile: web/Containerfile
     restart: unless-stopped
     depends_on:
       - api
