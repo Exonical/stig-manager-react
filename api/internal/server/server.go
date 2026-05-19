@@ -95,6 +95,7 @@ func New(opts Options) *Server {
 	if opts.Pool != nil {
 		apiServer.Users = store.NewUserRepo(opts.Pool)
 		apiServer.Collections = store.NewCollectionRepo(opts.Pool)
+		apiServer.Stigs = store.NewSTIGRepo(opts.Pool)
 	}
 
 	// Register the generated handlers directly onto the root chi router

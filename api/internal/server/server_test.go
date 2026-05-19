@@ -210,7 +210,7 @@ func TestAppInfo_RequiresScope(t *testing.T) {
 
 // TestUnimplementedReturns501 confirms that operations we have not yet
 // overridden still fall through to the api.Unimplemented 501 stub.
-// /stigs has only optional query parameters, so it bypasses the
+// /users has only optional query parameters, so it bypasses the
 // generated 400 validation layer and exercises Unimplemented directly.
 // A valid bearer token is required because the auth middleware gates
 // every /api/* operation that declares a security requirement.
@@ -226,8 +226,8 @@ func TestUnimplementedReturns501(t *testing.T) {
 	handler := newTestServer(t, withAuth(prov))
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/stigs", nil)
-	req.Header.Set("Authorization", "Bearer "+fx.token(t, "stig-manager:stig:read"))
+	req := httptest.NewRequest(http.MethodGet, "/api/users", nil)
+	req.Header.Set("Authorization", "Bearer "+fx.token(t, "stig-manager:user:read"))
 	handler.ServeHTTP(rec, req)
 	if got := rec.Result().StatusCode; got != http.StatusNotImplemented {
 		t.Fatalf("status: got %d want %d (body=%s)", got, http.StatusNotImplemented, rec.Body.String())
