@@ -48,7 +48,7 @@ working Caddyfile.
 ## Scanner integration (XCCDF results)
 
 ```bash
-curl -sSf https://stigman.example.invalid/api/v1/collections/42/reviews \
+curl -sSf https://stigman.example.invalid/api/collections/42/reviews \
   -H "Authorization: Bearer $JWT" \
   -H "Content-Type: multipart/form-data" \
   -F "file=@./results/xccdf-results.xml" \
@@ -63,7 +63,7 @@ summary of created/updated rows.
 ## CSV batch asset import
 
 ```bash
-curl -sSf https://stigman.example.invalid/api/v1/collections/42/assets:batch \
+curl -sSf https://stigman.example.invalid/api/collections/42/assets:batch \
   -H "Authorization: Bearer $JWT" \
   -H "Content-Type: text/csv" \
   --data-binary @./assets.csv
@@ -82,7 +82,7 @@ The CSV shape matches upstream's
     COLLECTION_ID: '42'
   run: |
     for f in results/*.xml; do
-      curl -fsSL "https://${STIGMAN_HOST}/api/v1/collections/${COLLECTION_ID}/reviews" \
+      curl -fsSL "https://${STIGMAN_HOST}/api/collections/${COLLECTION_ID}/reviews" \
         -H "Authorization: Bearer ${STIGMAN_TOKEN}" \
         -F "file=@${f}"
     done

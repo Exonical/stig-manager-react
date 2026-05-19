@@ -11,7 +11,7 @@ A STIG Manager deployment has three pieces:
 2. **An OIDC / OAuth 2.0 provider** — Keycloak, Okta, Azure Entra ID, or any
    compliant IdP that can issue JWTs containing the required claims.
 3. **The `stigman` binary** — a single Go executable that serves both the API
-   under `/api/v1` and the static SPA bundle at `/`.
+   under `/api` and the static SPA bundle at `/`.
 
 The Go binary is the only application component. It is configured entirely via
 environment variables and can be run from a container image, a systemd unit,

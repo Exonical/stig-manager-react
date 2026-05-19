@@ -35,7 +35,7 @@ The project is intentionally a small number of moving parts:
 A single, statically linked binary (`stigman`) is the only application
 component. It:
 
-- Serves `/api/v1/*` (REST, JSON, JWT-authenticated).
+- Serves `/api/*` (REST, JSON, JWT-authenticated).
 - Serves `/op/*` (operational endpoints + SSE + WebSocket).
 - Serves the **embedded React SPA** at `/` (via `embed.FS`).
 - Serves the **embedded Starlight docs** at `/docs/*`.

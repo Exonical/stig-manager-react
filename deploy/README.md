@@ -24,9 +24,11 @@ The Keycloak realm `stigman` is imported at start-up from
 | `admin`     | `admin`     | realm role `admin`                      |
 | `evaluator` | `evaluator` | no realm role; collection grants in app |
 
-> **Note:** the SPA → API → Postgres path is wired but the API only
-> serves the scaffold endpoints (`/api/v1/op/appinfo`,
-> `/api/v1/op/appdata/tables`) until Milestone 2.
+> **Note:** the SPA → API → Postgres path is wired and the full
+> `/api/*` OpenAPI surface (150+ operations) is generated and mounted,
+> but everything except `/api/op/appinfo` and `/api/op/configuration`
+> returns `501 Not Implemented` until real handlers land in subsequent
+> milestones.
 
 ## Kubernetes / production
 

@@ -4,11 +4,13 @@ package server
 import (
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 
+	"github.com/Exonical/stig-manager-react/api/internal/api"
 	"github.com/Exonical/stig-manager-react/api/internal/config"
 	"github.com/Exonical/stig-manager-react/api/internal/handlers"
 )
@@ -35,7 +37,7 @@ func New(opts Options) *Server {
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
-	r.Use(middleware.Timeout(60_000_000_000)) // 60s
+	r.Use(middleware.Timeout(60 * time.Second))
 
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   opts.Config.AllowedOrigins,
@@ -45,18 +47,24 @@ func New(opts Options) *Server {
 		MaxAge:           300,
 	}))
 
+	// Liveness probe lives outside the OpenAPI surface so orchestrators
+	// can hit it without a token. The generated router handles everything
+	// under /api.
 	r.Get("/health", handlers.Health)
 
-	r.Route("/api/v1", func(api chi.Router) {
-		api.Route("/op", func(op chi.Router) {
-			op.Get("/appinfo", handlers.AppInfo(handlers.AppInfoBuild{
-				Version:   opts.Version,
-				Commit:    opts.Commit,
-				BuildDate: opts.BuildDate,
-			}))
-			op.Get("/appdata/tables", handlers.AppDataTables)
-		})
-	})
+	apiServer := APIServer{
+		Build: AppInfoBuild{
+			Version:   opts.Version,
+			Commit:    opts.Commit,
+			BuildDate: opts.BuildDate,
+		},
+	}
+
+	// Register the generated handlers directly onto the root chi router
+	// at /api/* so the existing middleware stack (RequestID, CORS, etc.)
+	// applies. This matches upstream's URL layout: paths in the OpenAPI
+	// spec are relative to /api.
+	api.HandlerFromMuxWithBaseURL(apiServer, r, "/api")
 
 	return &Server{opts: opts, router: r}
 }
