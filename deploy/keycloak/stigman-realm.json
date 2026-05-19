@@ -1,0 +1,76 @@
+{
+  "realm": "stigman",
+  "enabled": true,
+  "displayName": "STIG Manager",
+  "registrationAllowed": false,
+  "resetPasswordAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "sslRequired": "external",
+  "accessTokenLifespan": 900,
+  "ssoSessionMaxLifespan": 36000,
+  "clients": [
+    {
+      "clientId": "stig-manager",
+      "name": "STIG Manager SPA",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": [
+        "http://localhost:54000/*",
+        "http://127.0.0.1:54000/*"
+      ],
+      "webOrigins": [
+        "http://localhost:54000",
+        "http://127.0.0.1:54000"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "access.token.lifespan": "900"
+      },
+      "defaultClientScopes": [
+        "stig-manager:collection",
+        "stig-manager:stig",
+        "stig-manager:user",
+        "stig-manager:op"
+      ]
+    }
+  ],
+  "clientScopes": [
+    { "name": "stig-manager:collection", "protocol": "openid-connect" },
+    { "name": "stig-manager:collection:read", "protocol": "openid-connect" },
+    { "name": "stig-manager:stig", "protocol": "openid-connect" },
+    { "name": "stig-manager:stig:read", "protocol": "openid-connect" },
+    { "name": "stig-manager:user", "protocol": "openid-connect" },
+    { "name": "stig-manager:user:read", "protocol": "openid-connect" },
+    { "name": "stig-manager:op", "protocol": "openid-connect" },
+    { "name": "stig-manager:op:read", "protocol": "openid-connect" }
+  ],
+  "users": [
+    {
+      "username": "admin",
+      "email": "admin@example.invalid",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        { "type": "password", "value": "admin", "temporary": false }
+      ],
+      "realmRoles": ["admin"]
+    },
+    {
+      "username": "evaluator",
+      "email": "evaluator@example.invalid",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        { "type": "password", "value": "evaluator", "temporary": false }
+      ]
+    }
+  ],
+  "roles": {
+    "realm": [
+      { "name": "admin", "description": "STIG Manager admin role" }
+    ]
+  }
+}
