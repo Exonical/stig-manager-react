@@ -4,50 +4,58 @@ A modern re-implementation of
 [NUWCDIVNPT/stig-manager](https://github.com/NUWCDIVNPT/stig-manager):
 
 - **Frontend:** React 19 + Vite + TypeScript + [shadcn/ui](https://ui.shadcn.com).
-- **Backend:** Go (`net/http` + `chi`), OpenAPI 3.0.1 v1 — byte-compatible with upstream.
-- **Database:** PostgreSQL 18.
+- **Backend:** Go 1.25 (`net/http` + `chi`), OpenAPI 3.0.1 v1 — byte-compatible with upstream.
+- **Database:** PostgreSQL 18 (via pgx v5).
+- **Auth:** OIDC / OAuth 2.0 PKCE (Keycloak / Okta / Azure Entra ID).
 - **Docs:** [Astro Starlight](https://starlight.astro.build/) (this repo's `docs/`).
-
-The project is staged across a series of milestones; the current PR adds
-Milestone 0, the documentation site.
 
 ## Repository layout
 
 ```
 .
-├── docs/                 Astro Starlight docs site (Milestone 0 — this PR)
-├── api/                  Go backend                     (Milestone 1+)
-├── web/                  React 19 SPA                   (Milestone 1+)
-├── deploy/               Docker / Compose / Helm        (Milestone 1+)
-├── tools/                supporting scripts             (later)
-└── .github/workflows/    CI
+├── api/                  Go backend (chi, pgx, slog)
+├── web/                  React 19 SPA (Vite, Tailwind v4, shadcn/ui)
+├── docs/                 Astro Starlight docs site
+├── deploy/               docker-compose + Keycloak realm import
+├── .github/workflows/    CI (web, api, docs)
+├── pnpm-workspace.yaml   pnpm workspace (docs + web)
+└── pnpm-lock.yaml        single lockfile at repo root
 ```
 
-## Quick start (docs)
+## Prerequisites
+
+- **Node.js 22** and **pnpm 9** (via [Corepack](https://nodejs.org/api/corepack.html)).
+- **Go 1.25** for the API.
+- **Docker / Docker Compose** for the integrated dev stack.
+
+## Quick start (everything via compose)
 
 ```bash
-cd docs
+docker compose -f deploy/compose/docker-compose.yaml up -d --build
+# SPA:      http://localhost:54000
+# API:      http://localhost:54001
+# Keycloak: http://localhost:8080  (admin / admin)
+```
+
+## Quick start (host development)
+
+From the repo root, install JS deps:
+
+```bash
 pnpm install
-pnpm dev
-# open http://127.0.0.1:4321
 ```
 
-To build the static site:
+In three terminals:
 
 ```bash
-cd docs
-pnpm build
-# output: docs/dist/
-```
+# 1. Go API on :54001
+cd api && cp -n .env.example .env && go run ./cmd/stigman
 
-## Quick start (application)
+# 2. React SPA on :54000 (proxies /api/* to the Go API)
+pnpm --filter @stig-manager-react/web dev
 
-*(Available from Milestone 1 onward.)*
-
-```bash
-docker compose -f deploy/compose/docker-compose.yaml up -d
-# SPA: http://localhost:54000
-# Docs: http://localhost:54000/docs
+# 3. Docs site on :4321
+pnpm --filter docs dev
 ```
 
 ## Status

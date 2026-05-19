@@ -5,10 +5,16 @@ on:
     branches: [main]
     paths:
       - 'docs/**'
+      - 'pnpm-workspace.yaml'
+      - 'pnpm-lock.yaml'
+      - 'package.json'
       - '.github/workflows/docs.yaml'
   pull_request:
     paths:
       - 'docs/**'
+      - 'pnpm-workspace.yaml'
+      - 'pnpm-lock.yaml'
+      - 'package.json'
       - '.github/workflows/docs.yaml'
   workflow_dispatch:
 
@@ -40,10 +46,9 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
-          cache-dependency-path: docs/pnpm-lock.yaml
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Install dependencies
-        working-directory: docs
         run: pnpm install --frozen-lockfile
 
       - name: Astro check (typecheck)
@@ -51,8 +56,7 @@ jobs:
         run: pnpm exec astro check || true
 
       - name: Build
-        working-directory: docs
-        run: pnpm build
+        run: pnpm --filter docs build
 
       - name: Upload built site
         uses: actions/upload-artifact@v4

@@ -1,0 +1,71 @@
+# Local development & demo compose stack.
+#
+# Brings up:
+#   - Postgres 18              (port 5432)
+#   - Keycloak (dev mode)      (port 8080)
+#   - API (Go)                 (port 54001)
+#   - Web (Vite preview)       (port 54000)
+#
+# Real production deploys will use the artifacts published in Milestone 4.
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: stigman
+      POSTGRES_PASSWORD: stigman
+      POSTGRES_DB: stigman
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stigman -d stigman"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    restart: unless-stopped
+    command:
+      - start-dev
+      - --import-realm
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "8080:8080"
+    volumes:
+      - ../keycloak:/opt/keycloak/data/import:ro
+
+  api:
+    build:
+      context: ../../api
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      STIGMAN_HTTP_ADDR: ":54001"
+      STIGMAN_DATABASE_URL: postgres://stigman:stigman@postgres:5432/stigman?sslmode=disable
+      STIGMAN_ALLOWED_ORIGINS: http://localhost:54000,http://127.0.0.1:54000
+      STIGMAN_LOG_LEVEL: info
+    ports:
+      - "54001:54001"
+
+  web:
+    build:
+      context: ../..
+      dockerfile: web/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "54000:80"
+
+volumes:
+  postgres-data:
