@@ -594,6 +594,196 @@ FOR UPDATE`
 	return nil
 }
 
+// HistoryByCollectionOptions narrows a cross-asset history listing.
+// CollectionID is required; the rest are optional filters. StartDate
+// keeps history entries strictly *before* (i.e. older than) the given
+// date — mirrors upstream's "history entries with a timestamp before
+// the specified start date" semantics. EndDate keeps entries after.
+type HistoryByCollectionOptions struct {
+	CollectionID int64
+	AssetID      int64
+	RuleID       string
+	Status       string
+	StartDate    *time.Time
+	EndDate      *time.Time
+}
+
+// HistoryByCollection lists review history entries across every asset
+// in collectionID, ordered (asset_id ASC, rule_id ASC, touch_ts DESC).
+// The (asset_id, rule_id) grouping is stable so handlers can stream
+// the result directly into the upstream ReviewHistoryAsset shape.
+func (r *ReviewRepo) HistoryByCollection(ctx context.Context, opt HistoryByCollectionOptions) ([]ReviewHistoryEntry, error) {
+	if opt.CollectionID == 0 {
+		return nil, errors.New("store: history by collection: collection id required")
+	}
+	args := []any{opt.CollectionID}
+	where := []string{"a.collection_id = $1"}
+	add := func(clause string, val any) {
+		args = append(args, val)
+		where = append(where, fmt.Sprintf(clause, len(args)))
+	}
+	if opt.AssetID > 0 {
+		add("h.asset_id = $%d", opt.AssetID)
+	}
+	if opt.RuleID != "" {
+		add("h.rule_id = $%d", opt.RuleID)
+	}
+	if opt.Status != "" {
+		add("h.status_label = $%d", opt.Status)
+	}
+	if opt.StartDate != nil {
+		// upstream semantics: "entries with a timestamp before the
+		// specified start date" → keep rows older than the cutoff.
+		add("h.touch_ts < $%d", opt.StartDate.UTC())
+	}
+	if opt.EndDate != nil {
+		add("h.touch_ts > $%d", opt.EndDate.UTC())
+	}
+	q := fmt.Sprintf(`
+SELECT h.history_id, h.review_id, h.asset_id, h.rule_id, h.result,
+       h.detail, h.comment, h.auto_result, h.result_engine,
+       h.status_label, COALESCE(h.status_text,''),
+       h.user_id, COALESCE(u.username,''), h.ts, h.touch_ts
+FROM review_history h
+JOIN asset a ON a.asset_id = h.asset_id
+LEFT JOIN app_user u ON u.user_id = h.user_id
+WHERE %s
+ORDER BY h.asset_id ASC, h.rule_id ASC, h.touch_ts DESC, h.history_id DESC
+`, strings.Join(where, " AND "))
+	rows, err := r.pool.Query(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("history by collection: %w", err)
+	}
+	defer rows.Close()
+	out := []ReviewHistoryEntry{}
+	for rows.Next() {
+		var h ReviewHistoryEntry
+		if err := rows.Scan(
+			&h.HistoryID, &h.ReviewID, &h.AssetID, &h.RuleID, &h.Result,
+			&h.Detail, &h.Comment, &h.AutoResult, &h.ResultEngine,
+			&h.StatusLabel, &h.StatusText,
+			&h.UserID, &h.Username, &h.TS, &h.TouchTS,
+		); err != nil {
+			return nil, fmt.Errorf("scan history: %w", err)
+		}
+		out = append(out, h)
+	}
+	return out, rows.Err()
+}
+
+// HistoryStats summarises review_history rows in a collection.
+// CollectionEntries is the total count; OldestEntry is the earliest
+// touch_ts across all rows. PerAsset is populated only when the
+// caller asked for the asset projection.
+type HistoryStats struct {
+	CollectionEntries int
+	OldestEntry       time.Time
+	PerAsset          []HistoryStatsAsset
+}
+
+// HistoryStatsAsset is the per-asset slice of HistoryStats.
+type HistoryStatsAsset struct {
+	AssetID     int64
+	AssetName   string
+	EntryCount  int
+	OldestEntry *time.Time
+}
+
+// HistoryStatsByCollection runs an aggregate over review_history for
+// the collection, honouring the same filters as HistoryByCollection.
+// When wantAssets is true the result also includes a per-asset
+// breakdown ordered by asset name.
+func (r *ReviewRepo) HistoryStatsByCollection(ctx context.Context, opt HistoryByCollectionOptions, wantAssets bool) (HistoryStats, error) {
+	if opt.CollectionID == 0 {
+		return HistoryStats{}, errors.New("store: history stats: collection id required")
+	}
+	args := []any{opt.CollectionID}
+	where := []string{"a.collection_id = $1"}
+	add := func(clause string, val any) {
+		args = append(args, val)
+		where = append(where, fmt.Sprintf(clause, len(args)))
+	}
+	if opt.AssetID > 0 {
+		add("h.asset_id = $%d", opt.AssetID)
+	}
+	if opt.RuleID != "" {
+		add("h.rule_id = $%d", opt.RuleID)
+	}
+	if opt.Status != "" {
+		add("h.status_label = $%d", opt.Status)
+	}
+	if opt.StartDate != nil {
+		add("h.touch_ts < $%d", opt.StartDate.UTC())
+	}
+	if opt.EndDate != nil {
+		add("h.touch_ts > $%d", opt.EndDate.UTC())
+	}
+	whereClause := strings.Join(where, " AND ")
+
+	var stats HistoryStats
+	q := fmt.Sprintf(`
+SELECT COUNT(*), COALESCE(MIN(h.touch_ts), 'epoch'::timestamptz)
+FROM review_history h
+JOIN asset a ON a.asset_id = h.asset_id
+WHERE %s
+`, whereClause)
+	if err := r.pool.QueryRow(ctx, q, args...).Scan(&stats.CollectionEntries, &stats.OldestEntry); err != nil {
+		return HistoryStats{}, fmt.Errorf("history stats aggregate: %w", err)
+	}
+	if !wantAssets {
+		return stats, nil
+	}
+	pq := fmt.Sprintf(`
+SELECT a.asset_id, a.name, COUNT(h.history_id), MIN(h.touch_ts)
+FROM asset a
+LEFT JOIN review_history h ON h.asset_id = a.asset_id
+WHERE %s
+GROUP BY a.asset_id, a.name
+HAVING COUNT(h.history_id) > 0
+ORDER BY a.name ASC, a.asset_id ASC
+`, whereClause)
+	rows, err := r.pool.Query(ctx, pq, args...)
+	if err != nil {
+		return HistoryStats{}, fmt.Errorf("history stats per asset: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var a HistoryStatsAsset
+		var oldest *time.Time
+		if err := rows.Scan(&a.AssetID, &a.AssetName, &a.EntryCount, &oldest); err != nil {
+			return HistoryStats{}, fmt.Errorf("scan history stats asset: %w", err)
+		}
+		a.OldestEntry = oldest
+		stats.PerAsset = append(stats.PerAsset, a)
+	}
+	return stats, rows.Err()
+}
+
+// DeleteHistoryByCollection bulk-deletes review_history rows in the
+// collection whose touch_ts is strictly older than retentionDate. If
+// assetID is non-zero, the delete is further constrained to that
+// asset. Returns the number of rows removed.
+func (r *ReviewRepo) DeleteHistoryByCollection(ctx context.Context, collectionID int64, retentionDate time.Time, assetID int64) (int64, error) {
+	if collectionID == 0 {
+		return 0, errors.New("store: delete history by collection: collection id required")
+	}
+	args := []any{collectionID, retentionDate.UTC()}
+	where := []string{
+		"h.asset_id IN (SELECT asset_id FROM asset WHERE collection_id = $1)",
+		"h.touch_ts < $2",
+	}
+	if assetID > 0 {
+		args = append(args, assetID)
+		where = append(where, fmt.Sprintf("h.asset_id = $%d", len(args)))
+	}
+	q := fmt.Sprintf(`DELETE FROM review_history h WHERE %s`, strings.Join(where, " AND "))
+	ct, err := r.pool.Exec(ctx, q, args...)
+	if err != nil {
+		return 0, fmt.Errorf("delete history by collection: %w", err)
+	}
+	return ct.RowsAffected(), nil
+}
+
 // classifyReviewErr maps Postgres errors that handlers want to surface
 // distinctly (uniqueness, foreign-key, check constraints) onto store
 // sentinel errors.

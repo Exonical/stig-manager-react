@@ -682,6 +682,224 @@ func patchToStorePatch(in api.ReviewAssetRulePatch) (store.ReviewPatch, error) {
 	return out, nil
 }
 
+// GetReviewHistoryByCollection returns the cross-asset history for
+// every review in a collection that matches the supplied filters.
+// Records are returned grouped by asset then rule, ordered newest-
+// first per rule — the upstream ReviewHistoryAsset/Rule shape.
+func (s APIServer) GetReviewHistoryByCollection(
+	w http.ResponseWriter, r *http.Request,
+	collectionId api.CollectionIdPath, params api.GetReviewHistoryByCollectionParams,
+) {
+	collID, ok := parseInt64Path(string(collectionId))
+	if !ok {
+		writeAuthError(w, http.StatusBadRequest, "invalid collectionId")
+		return
+	}
+	if _, _, _, ok := s.authorizeCollection(w, r, collID, "stig-manager:collection:read", RoleRestricted); !ok {
+		return
+	}
+	if s.Reviews == nil {
+		writeJSON(w, http.StatusOK, []api.ReviewHistoryAsset{})
+		return
+	}
+	opt := store.HistoryByCollectionOptions{CollectionID: collID}
+	if params.AssetId != nil {
+		if id, err := strconv.ParseInt(string(*params.AssetId), 10, 64); err == nil && id > 0 {
+			opt.AssetID = id
+		}
+	}
+	if params.RuleId != nil {
+		opt.RuleID = string(*params.RuleId)
+	}
+	if params.Status != nil {
+		opt.Status = string(*params.Status)
+	}
+	if params.StartDate != nil {
+		t := params.StartDate.Time
+		opt.StartDate = &t
+	}
+	if params.EndDate != nil {
+		t := params.EndDate.Time
+		opt.EndDate = &t
+	}
+
+	rows, err := s.Reviews.HistoryByCollection(r.Context(), opt)
+	if err != nil {
+		s.logErr(r, "list review history by collection", err)
+		writeAuthError(w, http.StatusInternalServerError, "failed to list review history")
+		return
+	}
+	writeJSON(w, http.StatusOK, historyEntriesToAssets(rows))
+}
+
+// GetReviewHistoryStatsByCollection returns aggregate counts of
+// history entries in the collection plus the oldest entry's
+// timestamp. When projection=asset is requested, the response also
+// includes a per-asset breakdown.
+func (s APIServer) GetReviewHistoryStatsByCollection(
+	w http.ResponseWriter, r *http.Request,
+	collectionId api.CollectionIdPath, params api.GetReviewHistoryStatsByCollectionParams,
+) {
+	collID, ok := parseInt64Path(string(collectionId))
+	if !ok {
+		writeAuthError(w, http.StatusBadRequest, "invalid collectionId")
+		return
+	}
+	if _, _, _, ok := s.authorizeCollection(w, r, collID, "stig-manager:collection:read", RoleRestricted); !ok {
+		return
+	}
+	if s.Reviews == nil {
+		writeJSON(w, http.StatusOK, api.ReviewHistoryStats{})
+		return
+	}
+
+	opt := store.HistoryByCollectionOptions{CollectionID: collID}
+	if params.AssetId != nil {
+		if id, err := strconv.ParseInt(string(*params.AssetId), 10, 64); err == nil && id > 0 {
+			opt.AssetID = id
+		}
+	}
+	if params.RuleId != nil {
+		opt.RuleID = string(*params.RuleId)
+	}
+	if params.Status != nil {
+		opt.Status = string(*params.Status)
+	}
+	if params.StartDate != nil {
+		t := params.StartDate.Time
+		opt.StartDate = &t
+	}
+	if params.EndDate != nil {
+		t := params.EndDate.Time
+		opt.EndDate = &t
+	}
+	wantAssets := false
+	if params.Projection != nil {
+		for _, p := range *params.Projection {
+			if p == "asset" {
+				wantAssets = true
+				break
+			}
+		}
+	}
+
+	stats, err := s.Reviews.HistoryStatsByCollection(r.Context(), opt, wantAssets)
+	if err != nil {
+		s.logErr(r, "stat review history", err)
+		writeAuthError(w, http.StatusInternalServerError, "failed to stat review history")
+		return
+	}
+	out := api.ReviewHistoryStats{
+		CollectionHistoryEntryCount: stats.CollectionEntries,
+		OldestHistoryEntryDate:      api.StringDateTime(stats.OldestEntry),
+	}
+	if wantAssets {
+		assets := make([]api.ReviewHistoryStatsAsset, 0, len(stats.PerAsset))
+		for _, a := range stats.PerAsset {
+			row := api.ReviewHistoryStatsAsset{
+				AssetId:           api.String255(a.AssetName),
+				HistoryEntryCount: a.EntryCount,
+			}
+			if a.OldestEntry != nil {
+				ts := a.OldestEntry.UTC().Format("2006-01-02T15:04:05Z07:00")
+				row.OldestHistoryEntry = &ts
+			}
+			assets = append(assets, row)
+		}
+		out.AssetHistoryEntryCounts = &assets
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// DeleteReviewHistoryByCollection bulk-deletes review_history rows
+// older than the requested retention date. Manage role is required
+// because this is a destructive operation. Returns the number of
+// rows removed.
+func (s APIServer) DeleteReviewHistoryByCollection(
+	w http.ResponseWriter, r *http.Request,
+	collectionId api.CollectionIdPath, params api.DeleteReviewHistoryByCollectionParams,
+) {
+	collID, ok := parseInt64Path(string(collectionId))
+	if !ok {
+		writeAuthError(w, http.StatusBadRequest, "invalid collectionId")
+		return
+	}
+	if _, _, _, ok := s.authorizeCollection(w, r, collID, "stig-manager:collection", RoleManage); !ok {
+		return
+	}
+	if s.Reviews == nil {
+		writeJSON(w, http.StatusOK, api.ReviewHistoryDeleted{HistoryEntriesDeleted: 0})
+		return
+	}
+
+	var assetID int64
+	if params.AssetId != nil {
+		if id, err := strconv.ParseInt(string(*params.AssetId), 10, 64); err == nil && id > 0 {
+			assetID = id
+		}
+	}
+
+	deleted, err := s.Reviews.DeleteHistoryByCollection(r.Context(), collID, params.RetentionDate.Time, assetID)
+	if err != nil {
+		s.logErr(r, "delete review history", err)
+		writeAuthError(w, http.StatusInternalServerError, "failed to delete review history")
+		return
+	}
+	writeJSON(w, http.StatusOK, api.ReviewHistoryDeleted{HistoryEntriesDeleted: int(deleted)})
+}
+
+// historyEntriesToAssets groups a flat list of history entries (asset
+// ASC, rule ASC, touch_ts DESC) into the upstream
+// ReviewHistoryAsset/Rule nested shape.
+func historyEntriesToAssets(entries []store.ReviewHistoryEntry) []api.ReviewHistoryAsset {
+	out := []api.ReviewHistoryAsset{}
+	if len(entries) == 0 {
+		return out
+	}
+	// The store query orders by asset_id ASC, rule_id ASC. Group by
+	// streaming through the slice.
+	var (
+		curAsset  *api.ReviewHistoryAsset
+		curRule   *api.ReviewHistoryRule
+		curAssetID int64
+		curRuleID  string
+	)
+	flushAsset := func() {
+		if curAsset != nil {
+			out = append(out, *curAsset)
+		}
+	}
+	for _, h := range entries {
+		assetIDStr := strconv.FormatInt(h.AssetID, 10)
+		if curAsset == nil || h.AssetID != curAssetID {
+			flushAsset()
+			curAssetID = h.AssetID
+			curAsset = &api.ReviewHistoryAsset{
+				AssetId:         api.String255(assetIDStr),
+				ReviewHistories: []api.ReviewHistoryRule{},
+			}
+			curRule = nil
+			curRuleID = ""
+		}
+		if curRule == nil || h.RuleID != curRuleID {
+			curAsset.ReviewHistories = append(curAsset.ReviewHistories, api.ReviewHistoryRule{
+				RuleId:  ruleIDPtr(h.RuleID),
+				History: []api.ReviewHistory{},
+			})
+			curRule = &curAsset.ReviewHistories[len(curAsset.ReviewHistories)-1]
+			curRuleID = h.RuleID
+		}
+		curRule.History = append(curRule.History, historyToAPI(h))
+	}
+	flushAsset()
+	return out
+}
+
+func ruleIDPtr(s string) *api.RuleId {
+	rid := api.RuleId(s)
+	return &rid
+}
+
 // unpackStatusWrite handles the ReviewStatusWrite oneOf: either a bare
 // label string ("submitted") or a struct {label, text}.
 func unpackStatusWrite(s api.ReviewStatusWrite) (string, string, error) {
