@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Benchmark xmlns="http://checklists.nist.gov/xccdf/1.2" id="xccdf_mil.disa.stig_benchmark_RHEL_9_STIG">
+  <version>1.2</version>
+  <TestResult id="xccdf_org.open-scap_testresult_xccdf_mil.disa.stig_profile_MAC-1_Sensitive" start-time="2025-01-15T10:00:00" end-time="2025-01-15T10:05:00">
+    <target>host-xccdf-1</target>
+    <target-address>10.0.0.30</target-address>
+    <target-facts>
+      <fact name="urn:xccdf:fact:asset:identifier:fqdn">host-xccdf-1.example.com</fact>
+      <fact name="urn:xccdf:fact:asset:identifier:mac">aa:bb:cc:dd:ee:03</fact>
+    </target-facts>
+    <rule-result idref="xccdf_mil.disa.stig_rule_SV-3000r1_rule" severity="high">
+      <result>pass</result>
+    </rule-result>
+    <rule-result idref="xccdf_mil.disa.stig_rule_SV-3001r1_rule" severity="medium">
+      <result>fail</result>
+    </rule-result>
+    <rule-result idref="SV-3002r1_rule">
+      <result>notapplicable</result>
+    </rule-result>
+    <rule-result idref="xccdf_mil.disa.stig_rule_SV-3003r1_rule">
+      <result>notchecked</result>
+    </rule-result>
+  </TestResult>
+</Benchmark>

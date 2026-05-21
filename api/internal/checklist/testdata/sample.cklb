@@ -1,0 +1,47 @@
+{
+  "title": "RHEL 9 STIG",
+  "stig_id": "RHEL_9_STIG",
+  "target_data": {
+    "host_name": "host-cklb-1",
+    "fqdn": "host-cklb-1.example.com",
+    "ip_address": "10.0.0.20",
+    "mac_address": "aa:bb:cc:dd:ee:02",
+    "role": "None"
+  },
+  "stigs": [
+    {
+      "stig_id": "RHEL_9_STIG",
+      "version": "1",
+      "release": "2",
+      "release_info": "Release: 2 Benchmark Date: 24 Jan 2025",
+      "rules": [
+        {
+          "group_id": "V-2000",
+          "rule_id": "SV-2000r1_rule",
+          "rule_id_src": "SV-2000r1_rule",
+          "severity": "high",
+          "status": "not_a_finding",
+          "finding_details": "clean",
+          "comments": ""
+        },
+        {
+          "group_id": "V-2001",
+          "rule_id": "SV-2001r1_rule",
+          "severity": "medium",
+          "status": "open",
+          "finding_details": "needs fix",
+          "comments": "scheduled"
+        },
+        {
+          "group_id": "V-2002",
+          "rule_id_src": "SV-2002r1_rule",
+          "status": "not_applicable"
+        },
+        {
+          "group_id": "V-2003",
+          "status": "not_reviewed"
+        }
+      ]
+    }
+  ]
+}

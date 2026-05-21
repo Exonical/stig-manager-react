@@ -8,12 +8,14 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strconv"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Exonical/stig-manager-react/api/internal/auth"
+	"github.com/Exonical/stig-manager-react/api/internal/checklist"
 	"github.com/Exonical/stig-manager-react/api/internal/store"
 )
 
@@ -248,3 +250,147 @@ func TestReviewsCrossCollectionGuard(t *testing.T) {
 		t.Fatalf("cross-collection PUT: got %d body=%s", rec.Code, rec.Body.String())
 	}
 }
+
+// TestPostReviewsByAssetCKL exercises the new bulk-import surface:
+// parse a CKL checklist with `checklist.ParseCKL`, transform the
+// normalised review payload into the OpenAPI's ReviewAssetPost shape,
+// POST it to /collections/{cid}/reviews/{assetId}, and verify the
+// affected counts + GET round-trip.
+func TestPostReviewsByAssetCKL(t *testing.T) {
+	pool := newIntegrationPool(t)
+	_, collID, assetID := seedAssetForReviews(t, pool, "user-1", "alice")
+	collStr := strconv.FormatInt(collID, 10)
+	aIDStr := strconv.FormatInt(assetID, 10)
+
+	fx := newOIDCFixture(t)
+	prov, err := auth.NewProvider(context.Background(), auth.Config{
+		Issuer: fx.issuer, Audience: "stig-manager",
+	})
+	if err != nil {
+		t.Fatalf("provider: %v", err)
+	}
+	handler := newTestServer(t, withAuth(prov), withPool(pool))
+
+	// Build the JSON payload from the CKL fixture.
+	f, err := os.Open("../checklist/testdata/sample.ckl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	parsed, err := checklist.ParseCKL(f)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if len(parsed.Reviews) == 0 {
+		t.Fatalf("empty parse result")
+	}
+	posts := make([]map[string]any, 0, len(parsed.Reviews))
+	for _, r := range parsed.Reviews {
+		posts = append(posts, map[string]any{
+			"ruleId":  r.RuleID,
+			"result":  string(r.Result),
+			"detail":  r.Detail,
+			"comment": r.Comment,
+		})
+	}
+	body, _ := json.Marshal(posts)
+
+	// First import → all inserts.
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/collections/"+collStr+"/reviews/"+aIDStr, bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+fx.token(t, "stig-manager:collection"))
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("post-1: got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var resp1 map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &resp1)
+	affected, _ := resp1["affected"].(map[string]any)
+	if got, want := affected["inserted"], float64(len(parsed.Reviews)); got != want {
+		t.Fatalf("post-1 inserted: got %v want %v (body=%s)", got, want, rec.Body.String())
+	}
+	if got := affected["updated"]; got != float64(0) {
+		t.Fatalf("post-1 updated: got %v want 0", got)
+	}
+	rejected, _ := resp1["rejected"].([]any)
+	if len(rejected) != 0 {
+		t.Fatalf("post-1 rejected: %v", rejected)
+	}
+
+	// Second import → all updates (PUT semantics: same rule, same asset).
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/api/collections/"+collStr+"/reviews/"+aIDStr, bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+fx.token(t, "stig-manager:collection"))
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("post-2: got %d", rec.Code)
+	}
+	var resp2 map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &resp2)
+	affected, _ = resp2["affected"].(map[string]any)
+	if got, want := affected["updated"], float64(len(parsed.Reviews)); got != want {
+		t.Fatalf("post-2 updated: got %v want %v", got, want)
+	}
+
+	// GET one of the imported rules back.
+	first := parsed.Reviews[0]
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/api/collections/"+collStr+"/reviews/"+aIDStr+"/"+first.RuleID, nil)
+	req.Header.Set("Authorization", "Bearer "+fx.token(t, "stig-manager:collection:read"))
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("get: got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &got)
+	if got["result"] != string(first.Result) {
+		t.Fatalf("get result: %+v", got)
+	}
+}
+
+// TestPostReviewsByAssetRejection verifies items missing a ruleId
+// land in the rejected list rather than failing the whole request.
+func TestPostReviewsByAssetRejection(t *testing.T) {
+	pool := newIntegrationPool(t)
+	_, collID, assetID := seedAssetForReviews(t, pool, "user-1", "alice")
+	collStr := strconv.FormatInt(collID, 10)
+	aIDStr := strconv.FormatInt(assetID, 10)
+
+	fx := newOIDCFixture(t)
+	prov, err := auth.NewProvider(context.Background(), auth.Config{
+		Issuer: fx.issuer, Audience: "stig-manager",
+	})
+	if err != nil {
+		t.Fatalf("provider: %v", err)
+	}
+	handler := newTestServer(t, withAuth(prov), withPool(pool))
+
+	body, _ := json.Marshal([]map[string]any{
+		{"ruleId": "SV-9000r1_rule", "result": "pass"},
+		{"result": "fail"}, // missing ruleId
+	})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/collections/"+collStr+"/reviews/"+aIDStr, bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+fx.token(t, "stig-manager:collection"))
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("post: got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+	affected, _ := resp["affected"].(map[string]any)
+	if affected["inserted"] != float64(1) {
+		t.Fatalf("inserted: %v", affected["inserted"])
+	}
+	rejected, _ := resp["rejected"].([]any)
+	if len(rejected) != 1 {
+		t.Fatalf("rejected: want 1 got %d (%v)", len(rejected), rejected)
+	}
+}
+
+// suppress unused-import warning when pgxpool isn't referenced
+// elsewhere in this file's helpers.
+var _ = (*pgxpool.Pool)(nil)
