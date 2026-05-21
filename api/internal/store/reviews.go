@@ -412,6 +412,151 @@ func (r *ReviewRepo) Exists(ctx context.Context, assetID int64, ruleID string) (
 	return ok, nil
 }
 
+// ResolveBatchTargets returns the set of (asset_id, rule_id) pairs
+// implied by a ReviewBatch request. The result is constrained so that
+// every (asset, rule) pair returned satisfies all of:
+//
+//   - the asset is in `collectionID` and enabled,
+//   - the asset matches the assets criteria (assetIDs OR benchmarkIDs),
+//   - the rule matches the rules criteria (ruleIDs OR benchmarkIDs),
+//   - the rule's benchmark is currently assigned to the asset
+//     (via asset_stig).
+//
+// Either side of each criteria pair may be nil; at least one of
+// `AssetIDs`/`AssetBenchmarks` must be non-empty and similarly for the
+// rule side. The caller is responsible for validation.
+type BatchCriteria struct {
+	AssetIDs        []int64
+	AssetBenchmarks []string
+	RuleIDs         []string
+	RuleBenchmarks  []string
+}
+
+// AssetRulePair is a resolved (asset, rule) tuple for batch processing.
+type AssetRulePair struct {
+	AssetID int64
+	RuleID  string
+}
+
+// ResolveBatchTargets executes the resolution query and returns pairs
+// ordered by (asset_id, rule_id) for deterministic processing.
+func (r *ReviewRepo) ResolveBatchTargets(ctx context.Context, collectionID int64, c BatchCriteria) ([]AssetRulePair, error) {
+	if collectionID <= 0 {
+		return nil, errors.New("store: resolve batch: collection id required")
+	}
+	if len(c.AssetIDs) == 0 && len(c.AssetBenchmarks) == 0 {
+		return nil, errors.New("store: resolve batch: assets criteria required")
+	}
+	if len(c.RuleIDs) == 0 && len(c.RuleBenchmarks) == 0 {
+		return nil, errors.New("store: resolve batch: rules criteria required")
+	}
+
+	// Normalise nil slices to empty so we can pass them straight into
+	// pgx's array-binding without the driver complaining.
+	assetIDs := c.AssetIDs
+	if assetIDs == nil {
+		assetIDs = []int64{}
+	}
+	assetBench := c.AssetBenchmarks
+	if assetBench == nil {
+		assetBench = []string{}
+	}
+	ruleIDs := c.RuleIDs
+	if ruleIDs == nil {
+		ruleIDs = []string{}
+	}
+	ruleBench := c.RuleBenchmarks
+	if ruleBench == nil {
+		ruleBench = []string{}
+	}
+
+	const q = `
+WITH target_assets AS (
+    SELECT a.asset_id
+    FROM asset a
+    WHERE a.collection_id = $1
+      AND a.state = 'enabled'
+      AND (
+          (cardinality($2::bigint[]) > 0 AND a.asset_id = ANY($2::bigint[]))
+          OR
+          (cardinality($3::text[]) > 0 AND EXISTS (
+              SELECT 1 FROM asset_stig as2
+              WHERE as2.asset_id = a.asset_id
+                AND as2.benchmark_id = ANY($3::text[])
+          ))
+      )
+),
+target_rules AS (
+    SELECT DISTINCT sr.rule_id, rv.benchmark_id
+    FROM stig_rule sr
+    JOIN stig_revision rv ON rv.revision_id = sr.revision_id
+    WHERE (cardinality($4::text[]) > 0 AND sr.rule_id = ANY($4::text[]))
+       OR (cardinality($5::text[]) > 0 AND rv.benchmark_id = ANY($5::text[]))
+)
+SELECT DISTINCT ta.asset_id, tr.rule_id
+FROM target_assets ta
+JOIN asset_stig ast ON ast.asset_id = ta.asset_id
+JOIN target_rules tr ON tr.benchmark_id = ast.benchmark_id
+ORDER BY ta.asset_id, tr.rule_id`
+
+	rows, err := r.pool.Query(ctx, q, collectionID, assetIDs, assetBench, ruleIDs, ruleBench)
+	if err != nil {
+		return nil, fmt.Errorf("resolve batch targets: %w", err)
+	}
+	defer rows.Close()
+	out := []AssetRulePair{}
+	for rows.Next() {
+		var p AssetRulePair
+		if err := rows.Scan(&p.AssetID, &p.RuleID); err != nil {
+			return nil, fmt.Errorf("scan batch pair: %w", err)
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+// GetSummaries returns the (result, status_label) for every (asset,
+// rule) pair in `pairs` that currently has a Review row. Used by the
+// batch handler to evaluate updateFilters and distinguish inserts
+// from updates without hitting the database per-pair.
+type ReviewSummary struct {
+	AssetID     int64
+	RuleID      string
+	Result      string
+	StatusLabel string
+}
+
+func (r *ReviewRepo) GetSummaries(ctx context.Context, pairs []AssetRulePair) ([]ReviewSummary, error) {
+	if len(pairs) == 0 {
+		return nil, nil
+	}
+	assetIDs := make([]int64, len(pairs))
+	ruleIDs := make([]string, len(pairs))
+	for i, p := range pairs {
+		assetIDs[i] = p.AssetID
+		ruleIDs[i] = p.RuleID
+	}
+	const q = `
+SELECT r.asset_id, r.rule_id, r.result, r.status_label
+FROM review r
+JOIN unnest($1::bigint[], $2::text[]) AS t(asset_id, rule_id)
+  ON t.asset_id = r.asset_id AND t.rule_id = r.rule_id`
+	rows, err := r.pool.Query(ctx, q, assetIDs, ruleIDs)
+	if err != nil {
+		return nil, fmt.Errorf("get summaries: %w", err)
+	}
+	defer rows.Close()
+	out := make([]ReviewSummary, 0, len(pairs))
+	for rows.Next() {
+		var s ReviewSummary
+		if err := rows.Scan(&s.AssetID, &s.RuleID, &s.Result, &s.StatusLabel); err != nil {
+			return nil, fmt.Errorf("scan summary: %w", err)
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
 // CollectionForAsset returns the collection_id that owns an asset.
 // Returns ErrNotFound if the asset is missing or disabled.
 func (r *ReviewRepo) CollectionForAsset(ctx context.Context, assetID int64) (int64, error) {
