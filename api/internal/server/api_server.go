@@ -93,6 +93,10 @@ type APIServer struct {
 	AppInfo *store.AppInfoRepo
 	// AppData implements the JSON export consumed by GetAppData.
 	AppData *store.AppDataRepo
+	// Audit reads / writes the audit_log table used by the
+	// mutation-recording middleware and the /api/op/audit-log
+	// admin read endpoint.
+	Audit *store.AuditRepo
 	// Broker is the publish/subscribe fan-out that powers
 	// /op/state/sse.  Nil disables the SSE endpoint.
 	Broker *state.Broker
