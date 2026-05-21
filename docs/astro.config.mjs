@@ -3,9 +3,17 @@ import { defineConfig } from 'astro/config'
 import starlight from '@astrojs/starlight'
 import starlightOpenAPI, { openAPISidebarGroups } from 'starlight-openapi'
 
+// Both the canonical apex (stig-manager-react.exonical.dev) and
+// GitHub Pages (exonical.github.io/stig-manager-react) build from this
+// same config. GitHub Pages serves from a sub-path, so the workflow
+// sets DOCS_SITE + DOCS_BASE to rewrite all asset URLs accordingly.
+const site = process.env.DOCS_SITE ?? 'https://stig-manager-react.exonical.dev'
+const base = process.env.DOCS_BASE ?? '/'
+
 // https://astro.build/config
 export default defineConfig({
-  site: 'https://stig-manager-react.exonical.dev',
+  site,
+  base,
   trailingSlash: 'never',
   integrations: [
     starlight({

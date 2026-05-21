@@ -55,7 +55,15 @@ jobs:
         working-directory: docs
         run: pnpm exec astro check || true
 
+      # GitHub Pages serves this repo's site under /stig-manager-react/.
+      # Override DOCS_SITE + DOCS_BASE so every CSS/JS asset URL emitted
+      # by Astro is prefixed correctly. On the canonical apex domain
+      # (deployed separately) these env vars are unset and Astro falls
+      # back to the defaults in astro.config.mjs.
       - name: Build
+        env:
+          DOCS_SITE: https://exonical.github.io
+          DOCS_BASE: /stig-manager-react
         run: pnpm --filter docs build
 
       - name: Upload built site
