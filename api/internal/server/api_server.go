@@ -65,6 +65,8 @@ type APIServer struct {
 	// Checklists assembles export payloads for the CKL / CKLB /
 	// XCCDF endpoints and the collection-level checklist summary.
 	Checklists *store.ChecklistRepo
+	// Poam aggregates failing reviews into POA&M xlsx findings.
+	Poam *store.PoamRepo
 }
 
 func (s APIServer) logErr(r *http.Request, op string, err error) {
