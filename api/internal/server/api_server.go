@@ -8,6 +8,7 @@ import (
 	"github.com/Exonical/stig-manager-react/api/internal/api"
 	"github.com/Exonical/stig-manager-react/api/internal/auth"
 	"github.com/Exonical/stig-manager-react/api/internal/jobs"
+	"github.com/Exonical/stig-manager-react/api/internal/state"
 	"github.com/Exonical/stig-manager-react/api/internal/store"
 )
 
@@ -84,6 +85,23 @@ type APIServer struct {
 	// before returning. Useful for tests; production should leave
 	// this false so the request returns 202 immediately.
 	SynchronousRuns bool
+
+	// AppInfo answers the lightweight queries that back
+	// GetAppInfo, GetAppDataTables and GetState (table sizes, row
+	// counts, schema version, db ping).  Optional; nil disables the
+	// db-derived fields.
+	AppInfo *store.AppInfoRepo
+	// AppData implements the JSON export consumed by GetAppData.
+	AppData *store.AppDataRepo
+	// Broker is the publish/subscribe fan-out that powers
+	// /op/state/sse.  Nil disables the SSE endpoint.
+	Broker *state.Broker
+	// RequestCounter accumulates per-route request statistics for
+	// the /op/appinfo "requests" section.
+	RequestCounter *RequestCounter
+	// AuthEnabled is true when an OIDC provider was configured at
+	// boot.  Surfaces via /op/state.dependencies.oidc.
+	AuthEnabled bool
 }
 
 func (s APIServer) logErr(r *http.Request, op string, err error) {
@@ -123,22 +141,6 @@ func (APIServer) requiredScope(w http.ResponseWriter, r *http.Request, scope str
 
 // Compile-time assertion that APIServer fully implements api.ServerInterface.
 var _ api.ServerInterface = (*APIServer)(nil)
-
-// GetAppInfo returns the running build's version metadata.
-//
-// The response is intentionally a minimal subset of upstream's AppInfo
-// payload until Milestone 4 fleshes it out. The OpenAPI spec gates this
-// endpoint behind `stig-manager:op:read`.
-func (s APIServer) GetAppInfo(w http.ResponseWriter, r *http.Request, _ api.GetAppInfoParams) {
-	if !s.requiredScope(w, r, "stig-manager:op:read") {
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"version":   s.Build.Version,
-		"commit":    s.Build.Commit,
-		"buildDate": s.Build.BuildDate,
-	})
-}
 
 // GetConfiguration returns the public runtime configuration needed by
 // the SPA. Per the OpenAPI spec this endpoint is `security: []` —
