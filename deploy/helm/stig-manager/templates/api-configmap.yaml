@@ -1,0 +1,51 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "stig-manager.config.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "stig-manager.api.labels" . | nindent 4 }}
+  {{- with .Values.commonAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+data:
+  STIGMAN_HTTP_ADDR: {{ printf ":%d" (int .Values.api.containerPort) | quote }}
+  STIGMAN_LOG_LEVEL: {{ .Values.config.logLevel | quote }}
+  {{- with .Values.config.allowedOrigins }}
+  STIGMAN_ALLOWED_ORIGINS: {{ . | quote }}
+  {{- end }}
+  STIGMAN_RATE_LIMIT_ENABLED: {{ .Values.config.rateLimit.enabled | quote }}
+  STIGMAN_RATE_LIMIT_RPS: {{ .Values.config.rateLimit.rps | quote }}
+  STIGMAN_RATE_LIMIT_BURST: {{ .Values.config.rateLimit.burst | quote }}
+  {{- with .Values.config.oidc.issuer }}
+  STIGMAN_OIDC_PROVIDER: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.config.oidc.discoveryUrl }}
+  STIGMAN_OIDC_DISCOVERY_URL: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.config.oidc.audience }}
+  STIGMAN_OIDC_AUDIENCE: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.config.oidc.clientId }}
+  STIGMAN_CLIENT_ID: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.config.oidc.extraScopes }}
+  STIGMAN_CLIENT_EXTRA_SCOPES: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.config.oidc.scopePrefix }}
+  STIGMAN_CLIENT_SCOPE_PREFIX: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.config.oidc.audienceValue }}
+  STIGMAN_CLIENT_AUDIENCE_VALUE: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.config.oidc.responseMode }}
+  STIGMAN_CLIENT_RESPONSE_MODE: {{ . | quote }}
+  {{- end }}
+  STIGMAN_CLIENT_STRICT_PKCE: {{ .Values.config.oidc.strictPKCE | quote }}
+  STIGMAN_JWT_USERNAME_CLAIM: {{ .Values.config.jwt.usernameClaim | quote }}
+  STIGMAN_JWT_NAME_CLAIM: {{ .Values.config.jwt.nameClaim | quote }}
+  STIGMAN_JWT_EMAIL_CLAIM: {{ .Values.config.jwt.emailClaim | quote }}
+  STIGMAN_JWT_PRIVILEGES_CLAIM: {{ .Values.config.jwt.privilegesClaim | quote }}
+  STIGMAN_JWT_SCOPE_CLAIM: {{ .Values.config.jwt.scopeClaim | quote }}
+  STIGMAN_JWT_ASSERTION_CLAIM: {{ .Values.config.jwt.assertionClaim | quote }}

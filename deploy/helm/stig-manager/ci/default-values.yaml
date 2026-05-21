@@ -1,0 +1,8 @@
+# Minimum viable values: just enough for `helm lint --strict` to pass.
+# Stays close to the chart's defaults so any regression in the
+# defaults themselves is caught.
+secrets:
+  databaseUrl: postgres://stigman:stigman@pg.databases.svc:5432/stigman?sslmode=disable
+config:
+  oidc:
+    issuer: https://idp.example.invalid/realms/stigman

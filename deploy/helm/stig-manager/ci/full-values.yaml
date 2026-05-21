@@ -1,0 +1,92 @@
+# Exercises every optional template path: ingress, autoscaling, PDB,
+# NetworkPolicy, an existing-secret reference, custom images, common
+# labels/annotations, extra env entries, and a non-default OIDC
+# discovery URL.
+nameOverride: stigman
+commonLabels:
+  app.kubernetes.io/part-of: platform
+commonAnnotations:
+  managed-by: argocd
+api:
+  image:
+    repository: registry.example.invalid/stigman/api
+    tag: v0.1.0
+  replicaCount: 3
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 9
+    targetCPUUtilizationPercentage: 65
+  extraEnv:
+    - name: GOGC
+      value: "200"
+  extraEnvFrom:
+    - configMapRef:
+        name: extra-config
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: 2
+      memory: 1Gi
+web:
+  image:
+    repository: registry.example.invalid/stigman/web
+    tag: v0.1.0
+  replicaCount: 3
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 6
+config:
+  logLevel: warn
+  allowedOrigins: https://stig.example.com
+  rateLimit:
+    enabled: true
+    rps: 100
+    burst: 200
+  oidc:
+    issuer: https://idp.example.com/realms/stigman
+    discoveryUrl: http://keycloak.idp.svc:8080/realms/stigman
+    audience: stig-manager
+    clientId: stig-manager-spa
+    extraScopes: stig-manager
+  jwt:
+    privilegesClaim: realm_access.roles
+secrets:
+  existing:
+    name: stigman-db
+    databaseUrlKey: dsn
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+    nginx.ingress.kubernetes.io/proxy-body-size: 50m
+  hosts:
+    - host: stig.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: stigman-tls
+      hosts:
+        - stig.example.com
+networkPolicy:
+  enabled: true
+  apiEgress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: databases
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: idp
+      ports:
+        - protocol: TCP
+          port: 8080

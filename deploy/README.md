@@ -60,4 +60,20 @@ The Keycloak realm `stigman` is imported at start-up from
 
 ## Kubernetes / production
 
-Helm chart and Kustomize overlays arrive in Milestone 4.
+The `helm/stig-manager` chart packages the API + SPA workloads for a
+real cluster. Postgres and the OIDC provider are explicitly out of
+scope — operators bring their own.
+
+```bash
+helm install stigman ./deploy/helm/stig-manager \
+  --namespace stigman --create-namespace \
+  --set secrets.databaseUrl='postgres://...' \
+  --set config.oidc.issuer='https://idp.example.com/realms/stigman' \
+  --set ingress.enabled=true \
+  --set 'ingress.hosts[0].host=stig.example.com' \
+  --set 'ingress.hosts[0].paths[0].path=/'
+```
+
+See [`deploy/helm/stig-manager/README.md`](./helm/stig-manager/README.md)
+for the full list of values, the bundled `helm test` smoke probe, and
+the CI fixtures under `deploy/helm/stig-manager/ci/`.

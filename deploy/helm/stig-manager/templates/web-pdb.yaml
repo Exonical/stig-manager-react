@@ -1,0 +1,18 @@
+{{- if and .Values.web.podDisruptionBudget.enabled (gt (int .Values.web.replicaCount) 1) -}}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "stig-manager.web.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "stig-manager.web.labels" . | nindent 4 }}
+spec:
+  {{- if .Values.web.podDisruptionBudget.minAvailable }}
+  minAvailable: {{ .Values.web.podDisruptionBudget.minAvailable }}
+  {{- else if .Values.web.podDisruptionBudget.maxUnavailable }}
+  maxUnavailable: {{ .Values.web.podDisruptionBudget.maxUnavailable }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "stig-manager.web.selectorLabels" . | nindent 6 }}
+{{- end }}
