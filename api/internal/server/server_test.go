@@ -264,10 +264,11 @@ func TestEnvJSExposesOIDCSettings(t *testing.T) {
 		t.Errorf("content-type: got %q want javascript", ct)
 	}
 	body := rec.Body.String()
-	// The script must declare `const STIGMAN = {...}` so the SPA can
-	// reference `STIGMAN.Env` after the script tag.
-	if !strings.HasPrefix(body, "const STIGMAN = ") {
-		t.Fatalf("script must start with `const STIGMAN = `; got: %s", body)
+	// The script must assign to window.STIGMAN — top-level `const` in
+	// a regular <script> tag is script-local in modern browsers and
+	// would never reach the SPA, which reads `window.STIGMAN.Env`.
+	if !strings.HasPrefix(body, "window.STIGMAN = ") {
+		t.Fatalf("script must start with `window.STIGMAN = `; got: %s", body)
 	}
 	if !strings.Contains(body, `"authority":"http://localhost:8080/realms/stigman"`) {
 		t.Errorf("authority not present in body: %s", body)

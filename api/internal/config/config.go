@@ -44,9 +44,18 @@ type RateLimitConfig struct {
 
 // OIDCConfig configures the API-side JWT validator.
 type OIDCConfig struct {
-	Issuer   string
-	Audience string
-	Claims   OIDCClaimPaths
+	// Issuer is the issuer claim (`iss`) expected on incoming access
+	// tokens. Used as the discovery URL when DiscoveryURL is empty.
+	Issuer string
+	// DiscoveryURL is the URL the API fetches the OIDC well-known
+	// metadata from. Set this only when it differs from Issuer — most
+	// commonly when a docker-compose stack reaches Keycloak via an
+	// internal hostname (`http://keycloak:8080/...`) but tokens are
+	// issued under a browser-facing hostname
+	// (`http://localhost:8080/...`).
+	DiscoveryURL string
+	Audience     string
+	Claims       OIDCClaimPaths
 }
 
 // OIDCClaimPaths configures which JWT claim each User field is sourced
@@ -81,8 +90,9 @@ func Load() (*Config, error) {
 		DatabaseURL: os.Getenv("STIGMAN_DATABASE_URL"),
 		LogLevel:    envOr("STIGMAN_LOG_LEVEL", "info"),
 		OIDC: OIDCConfig{
-			Issuer:   firstNonEmpty("STIGMAN_OIDC_PROVIDER", "STIGMAN_OIDC_ISSUER"),
-			Audience: os.Getenv("STIGMAN_OIDC_AUDIENCE"),
+			Issuer:       firstNonEmpty("STIGMAN_OIDC_PROVIDER", "STIGMAN_OIDC_ISSUER"),
+			DiscoveryURL: os.Getenv("STIGMAN_OIDC_DISCOVERY_URL"),
+			Audience:     os.Getenv("STIGMAN_OIDC_AUDIENCE"),
 			Claims: OIDCClaimPaths{
 				Username:   envOr("STIGMAN_JWT_USERNAME_CLAIM", "preferred_username"),
 				Name:       envOr("STIGMAN_JWT_NAME_CLAIM", "name"),

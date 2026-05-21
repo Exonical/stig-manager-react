@@ -38,8 +38,17 @@ func DefaultClaimPaths() ClaimPaths {
 // Config configures Provider.
 type Config struct {
 	// Issuer is the OIDC issuer URL (e.g.
-	// "http://localhost:8080/realms/stigman").
+	// "http://localhost:8080/realms/stigman"). This is the value the
+	// validator expects in the `iss` claim of incoming access tokens.
 	Issuer string
+	// DiscoveryURL is the URL the validator fetches the OIDC
+	// well-known metadata from. When empty, Issuer is used. Set this
+	// only when the discovery endpoint is reachable under a different
+	// hostname than the one Keycloak advertises as the issuer —
+	// typically a docker-compose stack where the API reaches Keycloak
+	// at `http://keycloak:8080/...` but tokens are issued under
+	// `http://localhost:8080/...`.
+	DiscoveryURL string
 	// Audience is the expected `aud` claim. Most Keycloak access tokens
 	// set this to the client id.
 	Audience string
@@ -68,7 +77,20 @@ func NewProvider(ctx context.Context, cfg Config) (*Provider, error) {
 		cfg.ClockSkew = 30 * time.Second
 	}
 
-	prov, err := oidc.NewProvider(ctx, cfg.Issuer)
+	discoveryURL := cfg.DiscoveryURL
+	if discoveryURL == "" {
+		discoveryURL = cfg.Issuer
+	}
+	discoveryCtx := ctx
+	if discoveryURL != cfg.Issuer {
+		// Tell go-oidc to expect tokens with `iss: cfg.Issuer` even
+		// though we fetched the well-known metadata from a different
+		// URL. Without this the library refuses to construct a
+		// Provider when discovery's `issuer` field doesn't match the
+		// URL we hit.
+		discoveryCtx = oidc.InsecureIssuerURLContext(ctx, cfg.Issuer)
+	}
+	prov, err := oidc.NewProvider(discoveryCtx, discoveryURL)
 	if err != nil {
 		return nil, fmt.Errorf("auth: oidc discovery: %w", err)
 	}

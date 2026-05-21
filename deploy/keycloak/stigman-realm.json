@@ -68,6 +68,8 @@
     {
       "username": "admin",
       "email": "admin@example.invalid",
+      "firstName": "Admin",
+      "lastName": "User",
       "enabled": true,
       "emailVerified": true,
       "credentials": [
@@ -78,6 +80,8 @@
     {
       "username": "evaluator",
       "email": "evaluator@example.invalid",
+      "firstName": "Evaluator",
+      "lastName": "User",
       "enabled": true,
       "emailVerified": true,
       "credentials": [
