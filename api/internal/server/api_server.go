@@ -59,6 +59,9 @@ type APIServer struct {
 	// `/collections/{cid}/reviews/*` endpoints (single-asset evaluator
 	// workspace + append-only history).
 	Reviews *store.ReviewRepo
+	// Metrics aggregates compliance metrics for
+	// `/collections/{cid}/metrics/summary*` endpoints.
+	Metrics *store.MetricsRepo
 }
 
 func (s APIServer) logErr(r *http.Request, op string, err error) {
