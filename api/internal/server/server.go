@@ -96,6 +96,9 @@ func New(opts Options) *Server {
 		apiServer.Users = store.NewUserRepo(opts.Pool)
 		apiServer.Collections = store.NewCollectionRepo(opts.Pool)
 		apiServer.Stigs = store.NewSTIGRepo(opts.Pool)
+		apiServer.Assets = store.NewAssetRepo(opts.Pool)
+		apiServer.Labels = store.NewLabelRepo(opts.Pool)
+		apiServer.Grants = store.NewGrantRepo(opts.Pool)
 	}
 
 	// Register the generated handlers directly onto the root chi router
