@@ -50,8 +50,12 @@ func (e EnvScript) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
 		},
 	}
 
+	// Top-level `let`/`const` declarations are script-local in modern
+	// browsers — they do *not* become properties on `window`. The SPA
+	// reads `window.STIGMAN.Env`, so we explicitly assign to window
+	// here.
 	var buf strings.Builder
-	buf.WriteString("const STIGMAN = ")
+	buf.WriteString("window.STIGMAN = ")
 	enc := json.NewEncoder(&buf)
 	enc.SetEscapeHTML(false)
 	_ = enc.Encode(map[string]any{"Env": env})

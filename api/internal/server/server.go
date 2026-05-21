@@ -226,8 +226,9 @@ func BuildAuthProvider(ctx context.Context, cfg *config.Config) (*auth.Provider,
 		return nil, nil
 	}
 	return auth.NewProvider(ctx, auth.Config{
-		Issuer:   cfg.OIDC.Issuer,
-		Audience: cfg.OIDC.Audience,
+		Issuer:       cfg.OIDC.Issuer,
+		DiscoveryURL: cfg.OIDC.DiscoveryURL,
+		Audience:     cfg.OIDC.Audience,
 		Claims: auth.ClaimPaths{
 			Username:   cfg.OIDC.Claims.Username,
 			Name:       cfg.OIDC.Claims.Name,

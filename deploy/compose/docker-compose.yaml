@@ -40,6 +40,14 @@ services:
     environment:
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: admin
+      # Pin the issuer (and the front-channel base URL) so tokens
+      # signed for the SPA carry `iss: http://localhost:8080/...`
+      # no matter which hostname the request arrived under. The API
+      # reaches Keycloak via the in-network `keycloak:8080` hostname;
+      # `KC_HOSTNAME_BACKCHANNEL_DYNAMIC=true` keeps that backchannel
+      # call working while the issuer claim itself stays stable.
+      KC_HOSTNAME: http://localhost:8080
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
       KC_HOSTNAME_STRICT: "false"
       KC_HEALTH_ENABLED: "true"
     ports:
@@ -65,14 +73,14 @@ services:
       STIGMAN_DATABASE_URL: postgres://stigman:stigman@postgres:5432/stigman?sslmode=disable
       STIGMAN_ALLOWED_ORIGINS: http://localhost:54000,http://127.0.0.1:54000
       STIGMAN_LOG_LEVEL: info
-      # OIDC — the API validates access tokens against this issuer's
-      # JWKS. Inside the compose network the API reaches Keycloak via
-      # the service hostname; the SPA reaches it via localhost. We
-      # advertise the localhost URL to the SPA via STIGMAN_CLIENT_OIDC_PROVIDER
-      # so PKCE redirects work from the browser.
-      STIGMAN_OIDC_PROVIDER: http://keycloak:8080/realms/stigman
+      # OIDC — access tokens carry `iss: http://localhost:8080/...`
+      # (pinned via Keycloak's KC_HOSTNAME above) because the SPA
+      # bootstraps the PKCE flow against the browser-facing URL.
+      # Inside the compose network the API still reaches Keycloak via
+      # the service hostname for discovery + JWKS, hence the split.
+      STIGMAN_OIDC_PROVIDER: http://localhost:8080/realms/stigman
+      STIGMAN_OIDC_DISCOVERY_URL: http://keycloak:8080/realms/stigman
       STIGMAN_OIDC_AUDIENCE: stig-manager
-      STIGMAN_CLIENT_OIDC_PROVIDER: http://localhost:8080/realms/stigman
       STIGMAN_CLIENT_ID: stig-manager
     ports:
       - "54001:54001"
