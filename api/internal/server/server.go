@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Exonical/stig-manager-react/api/internal/api"
+	"github.com/Exonical/stig-manager-react/api/internal/audit"
 	"github.com/Exonical/stig-manager-react/api/internal/auth"
 	"github.com/Exonical/stig-manager-react/api/internal/config"
 	"github.com/Exonical/stig-manager-react/api/internal/handlers"
@@ -58,6 +59,11 @@ type Server struct {
 func New(opts Options) *Server {
 	if opts.Logger == nil {
 		opts.Logger = slog.Default()
+	}
+
+	var auditRepo *store.AuditRepo
+	if opts.Pool != nil {
+		auditRepo = store.NewAuditRepo(opts.Pool)
 	}
 
 	r := chi.NewRouter()
@@ -109,6 +115,12 @@ func New(opts Options) *Server {
 		r.Use(rl.Middleware("/api/op/state/sse", "/health"))
 	}
 
+	// Audit middleware records every mutating /api/* request after the
+	// rate limiter has accepted it. Reads, /js/Env.js, and /health are
+	// skipped inside the middleware. When no Pool is configured the
+	// middleware degrades to a no-op (recorder is nil).
+	r.Use(audit.Middleware(auditRepo, audit.Config{Logger: opts.Logger}))
+
 	// Liveness probe lives outside the OpenAPI surface so orchestrators
 	// can hit it without a token. The generated router handles
 	// everything under /api.
@@ -138,6 +150,7 @@ func New(opts Options) *Server {
 		AuthEnabled:      opts.AuthProvider != nil,
 	}
 	if opts.Pool != nil {
+		apiServer.Audit = auditRepo
 		apiServer.Users = store.NewUserRepo(opts.Pool)
 		apiServer.Collections = store.NewCollectionRepo(opts.Pool)
 		apiServer.Stigs = store.NewSTIGRepo(opts.Pool)
@@ -165,6 +178,13 @@ func New(opts Options) *Server {
 		apiServer.JobRunner = jobs.NewRunner(apiServer.Jobs, registry, opts.Logger)
 		apiServer.JobRunner.SetListener(brokerJobListener{broker: broker})
 	}
+
+	// /api/op/audit-log is an admin-only read endpoint that surfaces
+	// the audit_log rows captured by the audit middleware. It is not
+	// part of the upstream OpenAPI surface (the table itself is
+	// stig-manager-react-specific), so we wire it directly on the
+	// root chi router before the generated handlers are mounted.
+	r.Get("/api/op/audit-log", apiServer.GetAuditLog)
 
 	// Register the generated handlers directly onto the root chi router
 	// at /api/* so the existing middleware stack (RequestID, CORS, etc.)
