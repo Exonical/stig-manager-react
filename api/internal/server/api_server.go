@@ -44,6 +44,17 @@ type APIServer struct {
 	// `/stigs/rules/{ruleId}`, `/stigs/ccis/{cci}`). Optional with the
 	// same fall-back semantics as the other repos.
 	Stigs *store.STIGRepo
+	// Assets is the data-layer entry point for `/assets/*` and
+	// `/collections/{cid}/assets/*` endpoints.
+	Assets *store.AssetRepo
+	// Labels is the data-layer entry point for
+	// `/collections/{cid}/labels/*` endpoints.
+	Labels *store.LabelRepo
+	// Grants is the data-layer entry point for
+	// `/collections/{cid}/grants/*` endpoints; also resolves the
+	// effective role for the requesting user when authorising
+	// per-collection writes.
+	Grants *store.GrantRepo
 }
 
 func (s APIServer) logErr(r *http.Request, op string, err error) {
