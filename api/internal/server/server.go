@@ -16,6 +16,7 @@ import (
 	"github.com/Exonical/stig-manager-react/api/internal/auth"
 	"github.com/Exonical/stig-manager-react/api/internal/config"
 	"github.com/Exonical/stig-manager-react/api/internal/handlers"
+	"github.com/Exonical/stig-manager-react/api/internal/jobs"
 	"github.com/Exonical/stig-manager-react/api/internal/store"
 )
 
@@ -36,6 +37,11 @@ type Options struct {
 	// MigrationVersion is the version of the most recently applied
 	// goose migration, surfaced via /api/op/configuration.
 	MigrationVersion int64
+	// SynchronousRuns flips RunImmediateJob into a blocking mode that
+	// drives the runner to completion before responding. Only used by
+	// the integration tests; production leaves this false so the
+	// endpoint returns 202 immediately.
+	SynchronousRuns bool
 }
 
 // Server holds the HTTP router and its dependencies.
@@ -91,6 +97,7 @@ func New(opts Options) *Server {
 		},
 		Logger:           opts.Logger,
 		MigrationVersion: opts.MigrationVersion,
+		SynchronousRuns:  opts.SynchronousRuns,
 	}
 	if opts.Pool != nil {
 		apiServer.Users = store.NewUserRepo(opts.Pool)
@@ -104,6 +111,18 @@ func New(opts Options) *Server {
 		apiServer.Checklists = store.NewChecklistRepo(opts.Pool)
 		apiServer.Poam = store.NewPoamRepo(opts.Pool)
 		apiServer.UserGroups = store.NewUserGroupRepo(opts.Pool)
+		apiServer.Jobs = store.NewJobRepo(opts.Pool)
+
+		// Seed the built-in task registry into job_task and wire the
+		// runner.  Seeding is idempotent so it is safe to run on every
+		// boot; errors are logged but do not block startup, mirroring
+		// the conservative bootstrap convention used by the other
+		// repos.
+		registry := jobs.NewBuiltinRegistry()
+		if err := registry.Seed(context.Background(), apiServer.Jobs); err != nil {
+			opts.Logger.Error("seed job task registry", "err", err)
+		}
+		apiServer.JobRunner = jobs.NewRunner(apiServer.Jobs, registry, opts.Logger)
 	}
 
 	// Register the generated handlers directly onto the root chi router

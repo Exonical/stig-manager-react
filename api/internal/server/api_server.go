@@ -7,6 +7,7 @@ import (
 
 	"github.com/Exonical/stig-manager-react/api/internal/api"
 	"github.com/Exonical/stig-manager-react/api/internal/auth"
+	"github.com/Exonical/stig-manager-react/api/internal/jobs"
 	"github.com/Exonical/stig-manager-react/api/internal/store"
 )
 
@@ -71,6 +72,18 @@ type APIServer struct {
 	// endpoints. Optional with the same fall-back semantics as the
 	// other repos.
 	UserGroups *store.UserGroupRepo
+	// Jobs persists scheduled jobs, runs and run-output rows that
+	// power the `/jobs/*` endpoints.  Optional with the same fall-
+	// back semantics as the other repos.
+	Jobs *store.JobRepo
+	// JobRunner executes the in-process task registry for an
+	// immediate run.  Nil when jobs are not wired (immediate-run
+	// responses fall back to 503).
+	JobRunner *jobs.Runner
+	// SynchronousRuns forces RunImmediateJob to wait for the runner
+	// before returning. Useful for tests; production should leave
+	// this false so the request returns 202 immediately.
+	SynchronousRuns bool
 }
 
 func (s APIServer) logErr(r *http.Request, op string, err error) {
