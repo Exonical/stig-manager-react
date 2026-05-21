@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Benchmark xmlns="http://checklists.nist.gov/xccdf/1.2"
+           id="xccdf_mil.disa.stig_benchmark_TEST_OS_STIG"
+           xml:lang="en">
+  <status date="2025-09-12">accepted</status>
+  <title>Test Operating System Security Technical Implementation Guide</title>
+  <description>This is a fixture STIG used by the API integration tests.</description>
+  <notice id="terms-of-use">DISA terms of use placeholder.</notice>
+  <plain-text id="release-info">Release: 3 Benchmark Date: 12 Sep 2025</plain-text>
+  <plain-text id="marking">Distribution Statement A.</plain-text>
+  <reference href="https://public.cyber.mil/stigs/">DISA STIGs</reference>
+  <version>2</version>
+
+  <Group id="V-100001">
+    <title>SRG-OS-000001</title>
+    <Rule id="SV-100001r1_rule" severity="medium" weight="10.0">
+      <version>TEST-OS-000010</version>
+      <title>The system must require strong passwords.</title>
+      <description>&lt;VulnDiscussion&gt;Weak passwords are easy to guess.&lt;/VulnDiscussion&gt;</description>
+      <reference><dc:source xmlns:dc="http://purl.org/dc/elements/1.1/">DPMS Target</dc:source></reference>
+      <ident system="http://cyber.mil/cci">CCI-000366</ident>
+      <ident system="http://cyber.mil/cci">CCI-000048</ident>
+      <fixtext fixref="F-100001r1_fix">Configure pam_pwquality to enforce strong passwords.</fixtext>
+      <fix id="F-100001r1_fix"/>
+      <check system="C-100001r1_chk">
+        <check-content-ref href="TEST-OS-STIG.xml" name="M"/>
+        <check-content>Verify pam_pwquality is installed with: rpm -q libpwquality</check-content>
+      </check>
+    </Rule>
+  </Group>
+
+  <Group id="V-100002">
+    <title>SRG-OS-000002</title>
+    <Rule id="SV-100002r1_rule" severity="high" weight="10.0">
+      <version>TEST-OS-000020</version>
+      <title>The system must enable SELinux in enforcing mode.</title>
+      <description>&lt;VulnDiscussion&gt;Mandatory access control limits process scope.&lt;/VulnDiscussion&gt;</description>
+      <ident system="http://cyber.mil/cci">CCI-000366</ident>
+      <fixtext fixref="F-100002r1_fix">Set SELINUX=enforcing in /etc/selinux/config and reboot.</fixtext>
+      <fix id="F-100002r1_fix"/>
+      <check system="C-100002r1_chk">
+        <check-content>Run sestatus and confirm "Current mode: enforcing".</check-content>
+      </check>
+    </Rule>
+  </Group>
+</Benchmark>

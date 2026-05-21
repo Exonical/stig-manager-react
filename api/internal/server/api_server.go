@@ -39,6 +39,11 @@ type APIServer struct {
 	// Collections is the data-layer entry point for the collections
 	// endpoints. Optional with the same fall-back semantics as Users.
 	Collections *store.CollectionRepo
+	// Stigs is the data-layer entry point for the STIG library
+	// endpoints (`/stigs`, `/stigs/{benchmarkId}`,
+	// `/stigs/rules/{ruleId}`, `/stigs/ccis/{cci}`). Optional with the
+	// same fall-back semantics as the other repos.
+	Stigs *store.STIGRepo
 }
 
 func (s APIServer) logErr(r *http.Request, op string, err error) {
