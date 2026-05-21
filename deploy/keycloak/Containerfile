@@ -1,0 +1,18 @@
+# Thin OCI image that bakes the stigman realm export into the
+# upstream Keycloak distribution at build time.
+#
+# We avoid bind-mounting the realm dir onto /opt/keycloak/data/import
+# in compose because some host filesystems (Windows / Docker Desktop /
+# Podman with SELinux) drop hidden subdirectories or symlinks into the
+# mount, which makes Keycloak's import scanner crash with
+# `directory not found` once it sees a non-file entry.
+#
+# Baking the file in via COPY means the import directory's contents
+# are byte-identical across every developer machine.
+
+FROM quay.io/keycloak/keycloak:26.6
+
+# /opt/keycloak/data/import is created and chowned to the
+# `keycloak` user (uid 1000) by the base image; we just drop the
+# realm export in alongside any future siblings.
+COPY --chown=1000:0 stigman-realm.json /opt/keycloak/data/import/stigman-realm.json
