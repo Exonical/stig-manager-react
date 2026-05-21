@@ -19,6 +19,7 @@ import (
 	"github.com/Exonical/stig-manager-react/api/internal/config"
 	"github.com/Exonical/stig-manager-react/api/internal/handlers"
 	"github.com/Exonical/stig-manager-react/api/internal/jobs"
+	"github.com/Exonical/stig-manager-react/api/internal/ratelimit"
 	"github.com/Exonical/stig-manager-react/api/internal/state"
 	"github.com/Exonical/stig-manager-react/api/internal/store"
 )
@@ -94,6 +95,19 @@ func New(opts Options) *Server {
 	// Per-handler scope checks gate individual operations; configuration
 	// and Env.js stay reachable without a token.
 	r.Use(auth.Middleware(opts.AuthProvider, opts.Logger))
+
+	// Per-client rate limiting runs after auth so authenticated
+	// callers are bucketed by their stable Subject claim rather than
+	// the source IP. Long-lived SSE streams and the public health
+	// endpoint are exempt.
+	if opts.Config != nil && opts.Config.RateLimit.Enabled {
+		rl := ratelimit.New(ratelimit.Config{
+			RequestsPerSecond: opts.Config.RateLimit.Rate,
+			Burst:             opts.Config.RateLimit.Burst,
+			Enabled:           true,
+		})
+		r.Use(rl.Middleware("/api/op/state/sse", "/health"))
+	}
 
 	// Liveness probe lives outside the OpenAPI surface so orchestrators
 	// can hit it without a token. The generated router handles
