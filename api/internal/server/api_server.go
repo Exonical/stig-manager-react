@@ -55,6 +55,10 @@ type APIServer struct {
 	// effective role for the requesting user when authorising
 	// per-collection writes.
 	Grants *store.GrantRepo
+	// Reviews is the data-layer entry point for
+	// `/collections/{cid}/reviews/*` endpoints (single-asset evaluator
+	// workspace + append-only history).
+	Reviews *store.ReviewRepo
 }
 
 func (s APIServer) logErr(r *http.Request, op string, err error) {
