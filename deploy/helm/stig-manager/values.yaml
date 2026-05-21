@@ -1,0 +1,291 @@
+# Default values for the stig-manager chart.
+#
+# The chart deploys two workloads:
+#   - `api` — the Go HTTP backend (listens on :54001 by default).
+#   - `web` — an nginx that serves the React SPA static bundle and
+#             reverse-proxies /api/* and /js/Env.js to the API service.
+#
+# The chart deliberately does NOT bundle Postgres or an OIDC provider.
+# Operators are expected to provide both externally: configure
+# `config.databaseUrl` (or `secrets.existing.databaseUrl`) and
+# `config.oidc.*` to point at running infrastructure.
+
+nameOverride: ""
+fullnameOverride: ""
+
+# Labels and annotations merged onto every resource the chart creates.
+commonLabels: {}
+commonAnnotations: {}
+
+# ---------------------------------------------------------------------
+# API workload — the Go HTTP backend.
+# ---------------------------------------------------------------------
+api:
+  image:
+    repository: ghcr.io/exonical/stig-manager-api
+    tag: ""
+    pullPolicy: IfNotPresent
+  imagePullSecrets: []
+  replicaCount: 2
+  # Listening port for the Go binary. Mirrors STIGMAN_HTTP_ADDR's port
+  # half. The Service exposes 80 -> this port.
+  containerPort: 54001
+  # Probes hit /health (anonymous). 60s timeout middleware does NOT
+  # apply to /health (rate-limit middleware skips it too).
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: http
+    initialDelaySeconds: 10
+    periodSeconds: 20
+    timeoutSeconds: 5
+    failureThreshold: 5
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: http
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  startupProbe:
+    httpGet:
+      path: /health
+      port: http
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 5
+    failureThreshold: 60
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 1000m
+      memory: 512Mi
+  podAnnotations: {}
+  podLabels: {}
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    runAsGroup: 65532
+    fsGroup: 65532
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    runAsNonRoot: true
+    runAsUser: 65532
+    runAsGroup: 65532
+    capabilities:
+      drop:
+        - ALL
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  topologySpreadConstraints: []
+  priorityClassName: ""
+  # Extra environment variables added verbatim to the container.
+  # Useful for STIGMAN_JWT_*_CLAIM overrides or anything not yet
+  # surfaced as a first-class value.
+  extraEnv: []
+  # Extra envFrom entries (configMapRef / secretRef).
+  extraEnvFrom: []
+  # Extra volumes / mounts (e.g. for CA bundles).
+  extraVolumes: []
+  extraVolumeMounts: []
+  service:
+    type: ClusterIP
+    port: 80
+    annotations: {}
+  serviceAccount:
+    create: true
+    name: ""
+    annotations: {}
+    automountServiceAccountToken: false
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: ""
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+    maxUnavailable: ""
+  # Args passed to the binary. The default container entrypoint is the
+  # Go binary itself, so leaving this empty is correct for stock usage.
+  args: []
+  command: []
+
+# ---------------------------------------------------------------------
+# Web workload — nginx serving the SPA + reverse-proxying /api/*.
+# ---------------------------------------------------------------------
+web:
+  image:
+    repository: ghcr.io/exonical/stig-manager-web
+    tag: ""
+    pullPolicy: IfNotPresent
+  imagePullSecrets: []
+  replicaCount: 2
+  containerPort: 80
+  livenessProbe:
+    tcpSocket:
+      port: http
+    initialDelaySeconds: 10
+    periodSeconds: 20
+    timeoutSeconds: 5
+    failureThreshold: 5
+  readinessProbe:
+    httpGet:
+      path: /
+      port: http
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 128Mi
+  podAnnotations: {}
+  podLabels: {}
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 101
+    runAsGroup: 101
+    fsGroup: 101
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    # nginx needs to write to /var/cache/nginx and /var/run; we mount
+    # emptyDirs there so the rest of the filesystem stays read-only.
+    readOnlyRootFilesystem: true
+    runAsNonRoot: true
+    runAsUser: 101
+    runAsGroup: 101
+    capabilities:
+      drop:
+        - ALL
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  topologySpreadConstraints: []
+  priorityClassName: ""
+  extraEnv: []
+  extraEnvFrom: []
+  service:
+    type: ClusterIP
+    port: 80
+    annotations: {}
+  serviceAccount:
+    create: true
+    name: ""
+    annotations: {}
+    automountServiceAccountToken: false
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 4
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: ""
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+    maxUnavailable: ""
+  # When true, the chart ships an nginx config that proxies
+  # /api/ and /js/Env.js to the api Service inside the cluster. Set to
+  # false if you want to provide your own ConfigMap via
+  # `web.existingConfigMap`.
+  defaultNginxConfig: true
+  existingConfigMap: ""
+
+# ---------------------------------------------------------------------
+# API runtime configuration.
+#
+# Anything here lands in either the ConfigMap (non-sensitive) or the
+# Secret (sensitive). Keys mirror the STIGMAN_* env vars exactly so the
+# chart stays loosely coupled to the binary.
+# ---------------------------------------------------------------------
+config:
+  logLevel: info
+  # Comma-separated list of CORS origins permitted to call the API.
+  allowedOrigins: ""
+  rateLimit:
+    enabled: true
+    rps: 50
+    burst: 100
+  oidc:
+    # `iss` claim expected on incoming tokens AND the URL the SPA
+    # bootstraps OIDC against.
+    issuer: ""
+    # Optional: URL the API fetches the OIDC well-known metadata from
+    # when it differs from `issuer` (e.g. cluster-internal hostname).
+    # Leave empty to use `issuer`.
+    discoveryUrl: ""
+    audience: "stig-manager"
+    clientId: "stig-manager"
+    # Optional client-side overrides. When empty the API/SPA fall back
+    # to sensible defaults.
+    extraScopes: ""
+    scopePrefix: ""
+    audienceValue: ""
+    responseMode: "fragment"
+    strictPKCE: true
+  jwt:
+    usernameClaim: "preferred_username"
+    nameClaim: "name"
+    emailClaim: "email"
+    privilegesClaim: "realm_access.roles"
+    scopeClaim: "scope"
+    assertionClaim: "jti"
+
+# ---------------------------------------------------------------------
+# Secrets — sensitive runtime configuration.
+#
+# By default the chart creates a Secret containing `databaseUrl`. To
+# instead reference a pre-existing Secret in the same namespace (e.g.
+# from an external-secrets controller), set
+# `secrets.existing.name` and the per-field key overrides.
+# ---------------------------------------------------------------------
+secrets:
+  # Inline values — only used when `secrets.existing.name` is empty.
+  databaseUrl: ""
+  existing:
+    # When non-empty, the API container's STIGMAN_DATABASE_URL is sourced
+    # from this Secret via valueFrom.secretKeyRef.
+    name: ""
+    databaseUrlKey: databaseUrl
+
+# ---------------------------------------------------------------------
+# Ingress — single hostname for the SPA + API. The web Service is the
+# upstream; web's nginx forwards /api/* and /js/Env.js to the api
+# Service.
+# ---------------------------------------------------------------------
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: stig.example.invalid
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+# ---------------------------------------------------------------------
+# Optional NetworkPolicy. Locks pod-to-pod traffic to the chart's own
+# Services + the egress targets the api needs (DNS + OIDC + Postgres).
+# Disabled by default because operators usually have a global CNI
+# policy.
+# ---------------------------------------------------------------------
+networkPolicy:
+  enabled: false
+  # Extra egress entries appended to the api's allowed egress (in
+  # addition to DNS). Use to allow Postgres + the OIDC provider.
+  apiEgress: []

@@ -1,0 +1,33 @@
+stig-manager has been installed in namespace {{ .Release.Namespace }}.
+
+API: {{ include "stig-manager.api.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.api.service.port }}
+Web: {{ include "stig-manager.web.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.web.service.port }}
+
+{{- if .Values.ingress.enabled }}
+Ingress is enabled. SPA + API are reachable at:
+{{- range .Values.ingress.hosts }}
+  https://{{ .host }}
+{{- end }}
+{{- else }}
+
+Ingress is disabled — port-forward to try it out:
+  kubectl --namespace {{ .Release.Namespace }} \
+    port-forward svc/{{ include "stig-manager.web.fullname" . }} 8080:{{ .Values.web.service.port }}
+  open http://localhost:8080
+{{- end }}
+
+Verify the install with the chart's own tests:
+  helm test {{ .Release.Name }} --namespace {{ .Release.Namespace }}
+
+{{- if not .Values.config.oidc.issuer }}
+
+WARNING: config.oidc.issuer is empty. The API will boot with auth
+disabled and the SPA will not be able to sign anyone in. Set
+config.oidc.issuer to the OIDC provider's URL before going live.
+{{- end }}
+{{- if and (not .Values.secrets.existing.name) (not .Values.secrets.databaseUrl) }}
+
+WARNING: secrets.databaseUrl is empty. The API will start without a
+database connection — every database-backed handler will return 503.
+Set secrets.databaseUrl or secrets.existing.name before going live.
+{{- end }}

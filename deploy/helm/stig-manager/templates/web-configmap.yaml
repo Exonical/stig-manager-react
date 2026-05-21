@@ -1,0 +1,54 @@
+{{- if and .Values.web.defaultNginxConfig (not .Values.web.existingConfigMap) -}}
+{{- $apiSvc := include "stig-manager.api.fullname" . -}}
+{{- $apiPort := int .Values.api.service.port -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "stig-manager.web.config.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "stig-manager.web.labels" . | nindent 4 }}
+data:
+  default.conf: |-
+    # Nginx config rendered by the stig-manager Helm chart.
+    #
+    # The SPA is served from the baked-in /usr/share/nginx/html bundle.
+    # /api/* and /js/Env.js are reverse-proxied to the cluster-internal
+    # api Service ({{ $apiSvc }}:{{ $apiPort }}).
+    server {
+      listen 80;
+      server_name _;
+      root /usr/share/nginx/html;
+      index index.html;
+
+      location /assets/ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        try_files $uri =404;
+      }
+
+      location /api/ {
+        proxy_pass http://{{ $apiSvc }}:{{ $apiPort }}/api/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        # /api/op/state/sse is long-lived; disable buffering + timeouts.
+        proxy_buffering off;
+        proxy_read_timeout 1h;
+      }
+
+      location = /js/Env.js {
+        proxy_pass http://{{ $apiSvc }}:{{ $apiPort }}/js/Env.js;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        add_header Cache-Control "no-store, max-age=0" always;
+      }
+
+      location / {
+        try_files $uri $uri/ /index.html;
+      }
+    }
+{{- end }}

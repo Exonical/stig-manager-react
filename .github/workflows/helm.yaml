@@ -1,0 +1,99 @@
+name: helm
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'deploy/helm/**'
+      - '.github/workflows/helm.yaml'
+  pull_request:
+    paths:
+      - 'deploy/helm/**'
+      - '.github/workflows/helm.yaml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: helm-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  HELM_VERSION: v3.16.4
+  # Pinned Kubernetes API set the rendered manifests must validate against.
+  KUBECONFORM_KUBE_VERSION: '1.30.0'
+
+jobs:
+  lint-and-template:
+    name: lint + template
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4.2.0
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Install kubeconform
+        run: |
+          set -eu
+          curl -fsSL -o /tmp/kubeconform.tgz \
+            https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz
+          tar -xzf /tmp/kubeconform.tgz -C /tmp/
+          sudo mv /tmp/kubeconform /usr/local/bin/kubeconform
+          kubeconform -v
+
+      - name: helm lint (default values)
+        run: |
+          helm lint deploy/helm/stig-manager --strict \
+            --values deploy/helm/stig-manager/ci/default-values.yaml
+
+      - name: helm lint (full values)
+        run: |
+          helm lint deploy/helm/stig-manager --strict \
+            --values deploy/helm/stig-manager/ci/full-values.yaml
+
+      - name: helm template (default values) + kubeconform
+        run: |
+          helm template stigman deploy/helm/stig-manager \
+            --values deploy/helm/stig-manager/ci/default-values.yaml \
+            --namespace stigman \
+            | tee /tmp/default.yaml
+          kubeconform \
+            -strict \
+            -summary \
+            -kubernetes-version "${KUBECONFORM_KUBE_VERSION}" \
+            -schema-location default \
+            -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+            /tmp/default.yaml
+
+      - name: helm template (full values) + kubeconform
+        run: |
+          helm template stigman deploy/helm/stig-manager \
+            --values deploy/helm/stig-manager/ci/full-values.yaml \
+            --namespace stigman \
+            | tee /tmp/full.yaml
+          kubeconform \
+            -strict \
+            -summary \
+            -kubernetes-version "${KUBECONFORM_KUBE_VERSION}" \
+            -schema-location default \
+            -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+            /tmp/full.yaml
+
+      - name: Verify missing-database-url is rejected
+        run: |
+          set +e
+          out=$(helm template stigman deploy/helm/stig-manager --namespace stigman 2>&1)
+          status=$?
+          if [ "$status" = "0" ]; then
+            echo "expected helm template to fail without secrets.databaseUrl, but it succeeded" >&2
+            exit 1
+          fi
+          echo "$out" | grep -q "secrets.databaseUrl (or secrets.existing.name) is required" || {
+            echo "missing-database-url did not raise the expected required-value error" >&2
+            echo "$out"
+            exit 1
+          }

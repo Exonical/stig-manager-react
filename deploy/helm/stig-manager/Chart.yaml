@@ -1,0 +1,29 @@
+apiVersion: v2
+name: stig-manager
+description: |
+  STIG Manager — a Go API and React 19 SPA for managing DISA STIG
+  evaluations against asset collections, with an external OIDC IdP
+  (Keycloak / Auth0 / Cognito / …) and an external Postgres 18.
+type: application
+# Chart version. Bump on any change to the chart itself.
+version: 0.1.0
+# Application version. Tracks the underlying API + SPA release.
+appVersion: "0.0.0-dev"
+kubeVersion: ">=1.26.0-0"
+home: https://github.com/Exonical/stig-manager-react
+sources:
+  - https://github.com/Exonical/stig-manager-react
+keywords:
+  - stig
+  - compliance
+  - disa
+  - scap
+  - xccdf
+maintainers:
+  - name: Exonical
+    url: https://github.com/Exonical
+annotations:
+  artifacthub.io/category: security
+  artifacthub.io/changes: |
+    - kind: added
+      description: Initial chart for the API + SPA workloads.
