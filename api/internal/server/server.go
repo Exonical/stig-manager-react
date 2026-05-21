@@ -5,11 +5,13 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Exonical/stig-manager-react/api/internal/api"
@@ -17,6 +19,7 @@ import (
 	"github.com/Exonical/stig-manager-react/api/internal/config"
 	"github.com/Exonical/stig-manager-react/api/internal/handlers"
 	"github.com/Exonical/stig-manager-react/api/internal/jobs"
+	"github.com/Exonical/stig-manager-react/api/internal/state"
 	"github.com/Exonical/stig-manager-react/api/internal/store"
 )
 
@@ -61,7 +64,6 @@ func New(opts Options) *Server {
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
-	r.Use(middleware.Timeout(60 * time.Second))
 
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   opts.Config.AllowedOrigins,
@@ -70,6 +72,23 @@ func New(opts Options) *Server {
 		AllowCredentials: true,
 		MaxAge:           300,
 	}))
+
+	requestCounter := NewRequestCounter()
+	r.Use(requestCounter.Middleware)
+
+	// SSE handlers need to run untouched by the request timeout —
+	// otherwise long-lived streams get killed at 60s. Apply the
+	// timeout only to non-SSE paths.
+	r.Use(func(next http.Handler) http.Handler {
+		timed := middleware.Timeout(60 * time.Second)(next)
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			if req.URL.Path == "/api/op/state/sse" {
+				next.ServeHTTP(w, req)
+				return
+			}
+			timed.ServeHTTP(w, req)
+		})
+	})
 
 	// Attach the authenticated user (if any) to the request context.
 	// Per-handler scope checks gate individual operations; configuration
@@ -89,6 +108,8 @@ func New(opts Options) *Server {
 		Commit:  opts.Commit,
 	}.ServeHTTP)
 
+	broker := state.NewBroker()
+
 	apiServer := APIServer{
 		Build: AppInfoBuild{
 			Version:   opts.Version,
@@ -98,6 +119,9 @@ func New(opts Options) *Server {
 		Logger:           opts.Logger,
 		MigrationVersion: opts.MigrationVersion,
 		SynchronousRuns:  opts.SynchronousRuns,
+		Broker:           broker,
+		RequestCounter:   requestCounter,
+		AuthEnabled:      opts.AuthProvider != nil,
 	}
 	if opts.Pool != nil {
 		apiServer.Users = store.NewUserRepo(opts.Pool)
@@ -112,6 +136,8 @@ func New(opts Options) *Server {
 		apiServer.Poam = store.NewPoamRepo(opts.Pool)
 		apiServer.UserGroups = store.NewUserGroupRepo(opts.Pool)
 		apiServer.Jobs = store.NewJobRepo(opts.Pool)
+		apiServer.AppInfo = store.NewAppInfoRepo(opts.Pool)
+		apiServer.AppData = store.NewAppDataRepo(opts.Pool)
 
 		// Seed the built-in task registry into job_task and wire the
 		// runner.  Seeding is idempotent so it is safe to run on every
@@ -123,6 +149,7 @@ func New(opts Options) *Server {
 			opts.Logger.Error("seed job task registry", "err", err)
 		}
 		apiServer.JobRunner = jobs.NewRunner(apiServer.Jobs, registry, opts.Logger)
+		apiServer.JobRunner.SetListener(brokerJobListener{broker: broker})
 	}
 
 	// Register the generated handlers directly onto the root chi router
@@ -136,6 +163,26 @@ func New(opts Options) *Server {
 
 // Router exposes the configured http.Handler.
 func (s *Server) Router() http.Handler { return s.router }
+
+// brokerJobListener bridges the jobs.Listener interface to the SSE
+// broker so /op/state/sse subscribers see "job.run" events whenever a
+// run transitions state.
+type brokerJobListener struct{ broker *state.Broker }
+
+func (b brokerJobListener) JobRunTransition(runID uuid.UUID, jobID int64, jobName, runState, message string) {
+	if b.broker == nil {
+		return
+	}
+	b.broker.Publish(state.Event{
+		Type: state.EventJobRun,
+		Data: state.JobRunEvent{
+			RunID:   runID.String(),
+			JobID:   strconv.FormatInt(jobID, 10),
+			State:   runState,
+			Message: message,
+		},
+	})
+}
 
 // BuildAuthProvider returns a configured *auth.Provider, or nil when
 // cfg.OIDC.Issuer is empty (unauthenticated dev mode). Errors are

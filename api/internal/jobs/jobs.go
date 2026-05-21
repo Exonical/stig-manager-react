@@ -157,12 +157,21 @@ func (w *OutputWriter) append(typ, msg string) error {
 	return w.repo.AppendOutput(w.ctx, w.runID, &tid, w.task, typ, msg)
 }
 
+// Listener is the optional hook that observes job run transitions
+// for downstream consumers (today: the /op/state/sse broker). The
+// package keeps the interface generic so jobs doesn't depend on the
+// state package directly.
+type Listener interface {
+	JobRunTransition(runID uuid.UUID, jobID int64, jobName, state, message string)
+}
+
 // Runner orchestrates a single job_run end-to-end. The zero value is
 // not usable; construct via NewRunner.
 type Runner struct {
 	repo     *store.JobRepo
 	registry *Registry
 	logger   *slog.Logger
+	listener Listener
 }
 
 // NewRunner wires the runner against a JobRepo + Registry.
@@ -171,6 +180,18 @@ func NewRunner(repo *store.JobRepo, reg *Registry, logger *slog.Logger) *Runner 
 		logger = slog.Default()
 	}
 	return &Runner{repo: repo, registry: reg, logger: logger}
+}
+
+// SetListener attaches a Listener that is notified at every run
+// state transition (running on start, completed/failed on terminal).
+func (rn *Runner) SetListener(l Listener) {
+	rn.listener = l
+}
+
+func (rn *Runner) notify(runID uuid.UUID, jobID int64, jobName, state, message string) {
+	if rn.listener != nil {
+		rn.listener.JobRunTransition(runID, jobID, jobName, state, message)
+	}
 }
 
 // Start dispatches a goroutine that executes every task linked to
@@ -200,13 +221,17 @@ func (rn *Runner) execute(parent context.Context, jobID int64, runID uuid.UUID) 
 		_ = rn.repo.FinishRun(ctx, runID, "failed")
 		_ = rn.repo.AppendOutput(ctx, runID, nil, "runner", "system",
 			fmt.Sprintf("failed to load job: %v", err))
+		rn.notify(runID, jobID, "", "failed", err.Error())
 		return "failed"
 	}
+
+	rn.notify(runID, jobID, job.Name, "running", "")
 
 	if len(job.Tasks) == 0 {
 		_ = rn.repo.AppendOutput(ctx, runID, nil, "runner", "system",
 			"job has no tasks; nothing to do")
 		_ = rn.repo.FinishRun(ctx, runID, "completed")
+		rn.notify(runID, jobID, job.Name, "completed", "job has no tasks")
 		return "completed"
 	}
 
@@ -216,6 +241,7 @@ func (rn *Runner) execute(parent context.Context, jobID int64, runID uuid.UUID) 
 			_ = rn.repo.AppendOutput(ctx, runID, &t.TaskID, t.Name, "system",
 				fmt.Sprintf("task %q not registered in this process", t.Name))
 			_ = rn.repo.FinishRun(ctx, runID, "failed")
+			rn.notify(runID, jobID, job.Name, "failed", "task not registered: "+t.Name)
 			return "failed"
 		}
 		writer := &OutputWriter{
@@ -229,11 +255,13 @@ func (rn *Runner) execute(parent context.Context, jobID int64, runID uuid.UUID) 
 			_ = writer.Stderr(err.Error())
 			_ = writer.System(fmt.Sprintf("task failed in %s", elapsed))
 			_ = rn.repo.FinishRun(ctx, runID, "failed")
+			rn.notify(runID, jobID, job.Name, "failed", err.Error())
 			return "failed"
 		}
 		_ = writer.System(fmt.Sprintf("task completed in %s", elapsed))
 	}
 	_ = rn.repo.FinishRun(ctx, runID, "completed")
+	rn.notify(runID, jobID, job.Name, "completed", "")
 	return "completed"
 }
 
