@@ -2,6 +2,7 @@
 import { defineConfig } from 'astro/config'
 import starlight from '@astrojs/starlight'
 import starlightOpenAPI, { openAPISidebarGroups } from 'starlight-openapi'
+import remarkBaseLinks from './remark-base-links.mjs'
 
 // Both the canonical apex (stig-manager-react.exonical.dev) and
 // GitHub Pages (exonical.github.io/stig-manager-react) build from this
@@ -15,8 +16,25 @@ export default defineConfig({
   site,
   base,
   trailingSlash: 'never',
+  // Astro rewrites HTML/CSS asset URLs and the sidebar links
+  // Starlight generates from `slug:` entries, but it does NOT touch
+  // root-relative links authored as `[text](/path)` inside markdown
+  // or as `href="/path"` on inline JSX components. We rewrite those
+  // ourselves at build time so the same content serves correctly
+  // under both the apex domain (base='/') and the Pages sub-path.
+  markdown: {
+    remarkPlugins: [[remarkBaseLinks, { base }]],
+  },
   integrations: [
     starlight({
+      // Custom component overrides. `Hero` mirrors upstream's
+      // splash-template Hero verbatim but additionally prefixes
+      // `hero.actions[].link` with `import.meta.env.BASE_URL` so the
+      // home-page action buttons resolve correctly under the GitHub
+      // Pages sub-path.
+      components: {
+        Hero: './src/components/Hero.astro',
+      },
       title: 'STIG Manager',
       description:
         'Open-source API and web client for managing STIG assessments. ' +
