@@ -139,6 +139,14 @@ func withClientAuthority(authority string) serverOpt {
 	return func(o *server.Options) { o.Config.Client.Authority = authority }
 }
 
+func withRateLimit(rps float64, burst int) serverOpt {
+	return func(o *server.Options) {
+		o.Config.RateLimit = config.RateLimitConfig{
+			Enabled: true, Rate: rps, Burst: burst,
+		}
+	}
+}
+
 func TestHealth(t *testing.T) {
 	t.Parallel()
 	rec := httptest.NewRecorder()

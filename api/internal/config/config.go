@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -26,6 +27,19 @@ type Config struct {
 	OIDC OIDCConfig
 	// Client carries SPA-facing settings the API serves via /js/Env.js.
 	Client ClientConfig
+	// RateLimit caps incoming request volume per authenticated user
+	// (or per remote IP when anonymous).
+	RateLimit RateLimitConfig
+}
+
+// RateLimitConfig caps per-client request volume. When Enabled is
+// false the middleware is a no-op. Rate and Burst follow standard
+// token-bucket semantics: the bucket is replenished at Rate tokens
+// per second up to a maximum of Burst tokens.
+type RateLimitConfig struct {
+	Enabled bool
+	Rate    float64
+	Burst   int
 }
 
 // OIDCConfig configures the API-side JWT validator.
@@ -88,6 +102,11 @@ func Load() (*Config, error) {
 			ResponseMode:  envOr("STIGMAN_CLIENT_RESPONSE_MODE", "fragment"),
 			StrictPKCE:    envBool("STIGMAN_CLIENT_STRICT_PKCE", true),
 		},
+		RateLimit: RateLimitConfig{
+			Enabled: envBool("STIGMAN_RATE_LIMIT_ENABLED", true),
+			Rate:    envFloat("STIGMAN_RATE_LIMIT_RPS", 50),
+			Burst:   envInt("STIGMAN_RATE_LIMIT_BURST", 100),
+		},
 	}
 
 	origins := envOr("STIGMAN_ALLOWED_ORIGINS",
@@ -124,6 +143,30 @@ func firstNonEmpty(keys ...string) string {
 		}
 	}
 	return ""
+}
+
+func envFloat(key string, fallback float64) float64 {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return fallback
+	}
+	f, err := strconv.ParseFloat(v, 64)
+	if err != nil || f <= 0 {
+		return fallback
+	}
+	return f
+}
+
+func envInt(key string, fallback int) int {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n <= 0 {
+		return fallback
+	}
+	return n
 }
 
 func envBool(key string, fallback bool) bool {
