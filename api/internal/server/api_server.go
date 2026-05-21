@@ -62,6 +62,9 @@ type APIServer struct {
 	// Metrics aggregates compliance metrics for
 	// `/collections/{cid}/metrics/summary*` endpoints.
 	Metrics *store.MetricsRepo
+	// Checklists assembles export payloads for the CKL / CKLB /
+	// XCCDF endpoints and the collection-level checklist summary.
+	Checklists *store.ChecklistRepo
 }
 
 func (s APIServer) logErr(r *http.Request, op string, err error) {

@@ -70,16 +70,23 @@ func newOIDCFixture(t *testing.T) *oidcFixture {
 }
 
 func (f *oidcFixture) token(t *testing.T, scope string) string {
+	return f.tokenForSub(t, "user-1", scope)
+}
+
+// tokenForSub mints a JWT for an arbitrary subject. Useful for tests
+// that need to drive the same handler under multiple identities (e.g.
+// authorisation checks that require a user with no collection grant).
+func (f *oidcFixture) tokenForSub(t *testing.T, sub, scope string) string {
 	t.Helper()
 	tok, err := jwt.Signed(f.signer).Claims(map[string]any{
 		"iss":                f.issuer,
 		"aud":                "stig-manager",
-		"sub":                "user-1",
-		"preferred_username": "alice",
+		"sub":                sub,
+		"preferred_username": "user-" + sub,
 		"scope":              scope,
 		"exp":                time.Now().Add(5 * time.Minute).Unix(),
 		"iat":                time.Now().Unix(),
-		"realm_access":       map[string]any{"roles": []string{"user", "admin"}},
+		"realm_access":       map[string]any{"roles": []string{"user"}},
 	}).Serialize()
 	if err != nil {
 		t.Fatalf("sign token: %v", err)
