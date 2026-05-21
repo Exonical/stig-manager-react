@@ -101,6 +101,7 @@ func New(opts Options) *Server {
 		apiServer.Grants = store.NewGrantRepo(opts.Pool)
 		apiServer.Reviews = store.NewReviewRepo(opts.Pool)
 		apiServer.Metrics = store.NewMetricsRepo(opts.Pool)
+		apiServer.Checklists = store.NewChecklistRepo(opts.Pool)
 	}
 
 	// Register the generated handlers directly onto the root chi router
