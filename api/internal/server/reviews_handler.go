@@ -298,6 +298,161 @@ func (s APIServer) PatchReviewByAssetRule(
 	writeJSON(w, http.StatusOK, reviewToRead(rv, nil))
 }
 
+// PostReviewsByAsset bulk-inserts or updates one or more Reviews on a
+// single Asset. Each item in the JSON array body is a ReviewAssetPost
+// (per the OpenAPI spec).
+//
+// Per upstream's behaviour, the response carries counts of inserted vs
+// updated Reviews plus a list of rejected items (e.g. items missing a
+// ruleId). The semantic gates from the spec (collection settings
+// status.resetCriteria, per-rule ACLs) land in later milestones; M8
+// implements the upsert plumbing only.
+func (s APIServer) PostReviewsByAsset(
+	w http.ResponseWriter, r *http.Request,
+	collectionId api.CollectionIdPath, assetId api.AssetIdPath,
+) {
+	collID, ok := parseInt64Path(string(collectionId))
+	if !ok {
+		writeAuthError(w, http.StatusBadRequest, "invalid collectionId")
+		return
+	}
+	aID, ok := parseInt64Path(string(assetId))
+	if !ok {
+		writeAuthError(w, http.StatusBadRequest, "invalid assetId")
+		return
+	}
+	_, userID, _, ok := s.authorizeCollection(w, r, collID, "stig-manager:collection", RoleManage)
+	if !ok {
+		return
+	}
+	if s.Reviews == nil {
+		writeAuthError(w, http.StatusServiceUnavailable, "database unavailable")
+		return
+	}
+
+	owner, err := s.Reviews.CollectionForAsset(r.Context(), aID)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeAuthError(w, http.StatusNotFound, "asset not found")
+			return
+		}
+		s.logErr(r, "lookup asset collection", err)
+		writeAuthError(w, http.StatusInternalServerError, "failed to verify asset")
+		return
+	}
+	if owner != collID {
+		writeAuthError(w, http.StatusNotFound, "asset not found in collection")
+		return
+	}
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeAuthError(w, http.StatusBadRequest, "failed to read body")
+		return
+	}
+	var posts []api.ReviewAssetPost
+	if err := json.Unmarshal(body, &posts); err != nil {
+		writeAuthError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+		return
+	}
+
+	resp := newReviewPostResponse()
+	var inserted, updated float32
+	for _, p := range posts {
+		if p.RuleId == nil || string(*p.RuleId) == "" {
+			appendRejected(&resp, nil, "missing ruleId")
+			continue
+		}
+		rID := string(*p.RuleId)
+		w8, err := postToStoreWrite(p)
+		if err != nil {
+			appendRejected(&resp, p.RuleId, err.Error())
+			continue
+		}
+		existed, err := s.Reviews.Exists(r.Context(), aID, rID)
+		if err != nil {
+			s.logErr(r, "exists review", err)
+			appendRejected(&resp, p.RuleId, "internal error")
+			continue
+		}
+		if _, err := s.Reviews.Put(r.Context(), aID, rID, userID, w8); err != nil {
+			reason := err.Error()
+			if errors.Is(err, store.ErrConflict) {
+				reason = "invalid review payload"
+			}
+			appendRejected(&resp, p.RuleId, reason)
+			continue
+		}
+		if existed {
+			updated++
+		} else {
+			inserted++
+		}
+	}
+	resp.Affected.Inserted = &inserted
+	resp.Affected.Updated = &updated
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// newReviewPostResponse returns a ReviewPostResponse with a non-nil
+// (but empty) Rejected slice so JSON output never includes a `null`
+// rejected list.
+func newReviewPostResponse() api.ReviewPostResponse {
+	return api.ReviewPostResponse{
+		Rejected: []struct {
+			Reason *api.String255 `json:"reason,omitempty"`
+			RuleId *api.RuleId    `json:"ruleId,omitempty"`
+		}{},
+	}
+}
+
+func appendRejected(resp *api.ReviewPostResponse, ruleID *api.RuleId, reason string) {
+	rs := api.String255(reason)
+	resp.Rejected = append(resp.Rejected, struct {
+		Reason *api.String255 `json:"reason,omitempty"`
+		RuleId *api.RuleId    `json:"ruleId,omitempty"`
+	}{Reason: &rs, RuleId: ruleID})
+}
+
+// postToStoreWrite converts a single ReviewAssetPost (the JSON shape
+// accepted by POST /reviews/{assetId}) into the store-layer write
+// bundle used by ReviewRepo.Put.
+func postToStoreWrite(p api.ReviewAssetPost) (store.ReviewWrite, error) {
+	out := store.ReviewWrite{Result: string(p.Result)}
+	if p.AutoResult != nil {
+		out.AutoResult = *p.AutoResult
+	}
+	if p.Comment != nil {
+		out.Comment = string(*p.Comment)
+	}
+	if p.Detail != nil {
+		out.Detail = string(*p.Detail)
+	}
+	if p.Metadata != nil {
+		b, err := json.Marshal(p.Metadata)
+		if err != nil {
+			return out, errors.New("invalid metadata")
+		}
+		out.Metadata = b
+	}
+	if p.ResultEngine != nil {
+		b, err := json.Marshal(p.ResultEngine)
+		if err != nil {
+			return out, errors.New("invalid resultEngine")
+		}
+		out.ResultEngine = b
+	}
+	if p.Status != nil {
+		label, text, err := unpackStatusWrite(*p.Status)
+		if err != nil {
+			return out, err
+		}
+		out.StatusLabel = label
+		out.StatusText = text
+	}
+	return out, nil
+}
+
 // DeleteReviewByAssetRule removes a Review, snapshotting it to
 // review_history first.
 func (s APIServer) DeleteReviewByAssetRule(

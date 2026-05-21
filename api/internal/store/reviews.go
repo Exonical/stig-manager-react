@@ -397,6 +397,21 @@ ORDER BY h.created_at DESC, h.history_id DESC`
 	return out, rows.Err()
 }
 
+// Exists reports whether a Review row currently exists for the given
+// pair. Used by bulk upsert callers that need to distinguish inserts
+// from updates in their response.
+func (r *ReviewRepo) Exists(ctx context.Context, assetID int64, ruleID string) (bool, error) {
+	var ok bool
+	err := r.pool.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM review WHERE asset_id = $1 AND rule_id = $2)`,
+		assetID, ruleID,
+	).Scan(&ok)
+	if err != nil {
+		return false, fmt.Errorf("review exists: %w", err)
+	}
+	return ok, nil
+}
+
 // CollectionForAsset returns the collection_id that owns an asset.
 // Returns ErrNotFound if the asset is missing or disabled.
 func (r *ReviewRepo) CollectionForAsset(ctx context.Context, assetID int64) (int64, error) {
