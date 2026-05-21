@@ -157,7 +157,10 @@ LIMIT $` + strconv.Itoa(idx)
 		return nil, err
 	}
 	defer rows.Close()
-	out := make([]AuditEntry, 0, limit)
+	// Initial capacity is a fixed constant so user-tainted values
+	// never flow into the make() size; the slice grows naturally as
+	// rows stream in.
+	out := make([]AuditEntry, 0, 32)
 	for rows.Next() {
 		var (
 			e            AuditEntry
