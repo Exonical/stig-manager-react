@@ -49,6 +49,9 @@ func (s APIServer) GetReviewsByCollection(
 			opts.AssetID = id
 		}
 	}
+	if params.Rules != nil {
+		opts.Rules = string(*params.Rules)
+	}
 
 	rows, err := s.Reviews.List(r.Context(), opts)
 	if err != nil {
@@ -85,9 +88,14 @@ func (s APIServer) GetReviewsByAsset(
 		writeJSON(w, http.StatusOK, []api.ReviewAssetRuleRead{})
 		return
 	}
+	rulesFilter := ""
+	if params.Rules != nil {
+		rulesFilter = string(*params.Rules)
+	}
 	rows, err := s.Reviews.List(r.Context(), store.ListReviewsOptions{
 		CollectionID: collID, AssetID: aID,
 		Result: deref(params.Result), Status: deref(params.Status),
+		Rules: rulesFilter,
 	})
 	if err != nil {
 		s.logErr(r, "list reviews by asset", err)
@@ -516,6 +524,13 @@ func wantsProjection(p *api.ReviewProjectionQuery, name string) bool {
 }
 
 func reviewToRead(row store.Review, history []api.ReviewHistory) api.ReviewAssetRuleRead {
+	// The OpenAPI schema models the rule identifier as ruleIds[]
+	// (republished-rule mapping can produce multiple). Each review
+	// row in our store is keyed by exactly one (asset, rule) pair,
+	// so the minimum stable answer is the review's own rule_id.
+	rid := api.RuleId(row.RuleID)
+	ruleIds := []*api.RuleId{&rid}
+
 	out := api.ReviewAssetRuleRead{
 		Access:     "rw",
 		AutoResult: &row.AutoResult,
@@ -527,6 +542,7 @@ func reviewToRead(row store.Review, history []api.ReviewHistory) api.ReviewAsset
 		Ts:         api.StringDateTime(row.TS),
 		UserId:     api.UserId(strconv.FormatInt(row.UserID, 10)),
 		Username:   api.Username(row.Username),
+		RuleIds:    &ruleIds,
 	}
 	if len(row.Metadata) > 0 && string(row.Metadata) != "null" {
 		var m api.Metadata

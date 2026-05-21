@@ -87,6 +87,21 @@ type ListReviewsOptions struct {
 	RuleID       string
 	Result       string
 	Status       string
+
+	// Rules selects which subset of an asset's reviews to surface
+	// relative to the asset's "default revision" rule universe. The
+	// empty string and "all" disable the filter. Other accepted
+	// values mirror the OpenAPI enum:
+	//
+	//   default            - rule_id is in the asset's default rev
+	//   not-default        - rule_id is NOT in the asset's default rev
+	//   mapped             - rule has a (version, group) twin in default
+	//   default-mapped     - default ∪ mapped (default trivially maps)
+	//   not-default-mapped - not-default ∩ mapped (republished)
+	//   not-mapped         - no (version, group) twin in default
+	//
+	// Unknown values are treated as "all".
+	Rules string
 }
 
 // ReviewRepo provides CRUD for individual asset-rule reviews and their
@@ -152,8 +167,11 @@ func (r *ReviewRepo) List(ctx context.Context, opt ListReviewsOptions) ([]Review
 		args = append(args, opt.Status)
 		conds = append(conds, fmt.Sprintf("r.status_label = $%d", len(args)))
 	}
+	if clause := rulesFilterClause(opt.Rules); clause != "" {
+		conds = append(conds, clause)
+	}
 
-	q := `
+	q := rulesCTE() + `
 SELECT r.review_id, r.asset_id, r.rule_id, r.result,
        r.detail, r.comment, r.auto_result, r.result_engine, r.metadata,
        r.status_label, COALESCE(r.status_text,''), r.status_user_id, r.status_ts,
@@ -782,6 +800,104 @@ func (r *ReviewRepo) DeleteHistoryByCollection(ctx context.Context, collectionID
 		return 0, fmt.Errorf("delete history by collection: %w", err)
 	}
 	return ct.RowsAffected(), nil
+}
+
+// rulesCTE returns the WITH clause used by List() when callers want
+// to filter reviews relative to each asset's default revision. The
+// CTE is always safe to include: when no rules clause is appended,
+// Postgres simply elides the CTE during planning.
+//
+// asset_default_rev rolls up the (asset_id, default revision_id)
+// pairs for every (asset, benchmark) binding. A NULL revision_id on
+// asset_stig means "use the latest revision available" (mirrors
+// upstream's default-revision semantics).
+func rulesCTE() string {
+	return `
+WITH asset_default_rev AS (
+  SELECT ast.asset_id,
+         COALESCE(
+           ast.revision_id,
+           (SELECT sr.revision_id
+              FROM stig_revision sr
+              WHERE sr.benchmark_id = ast.benchmark_id
+              ORDER BY COALESCE(sr.benchmark_date, sr.imported_at::date) DESC,
+                       sr.revision_id DESC
+              LIMIT 1)
+         ) AS default_rev_id
+    FROM asset_stig ast
+)
+`
+}
+
+// rulesFilterClause maps the OpenAPI enum onto a SQL expression
+// appended to a WHERE clause. The expression references `r` (review)
+// and the asset_default_rev CTE.
+//
+//	default           : EXISTS default-rev rule with matching rule_id
+//	not-default       : NOT EXISTS the above
+//	mapped            : EXISTS default-rev rule sharing (version,group)
+//	default-mapped    : alias for mapped (default trivially maps)
+//	not-default-mapped: NOT EXISTS default-rev rule_id AND EXISTS mapping
+//	not-mapped        : NOT EXISTS default-rev rule sharing (version,group)
+func rulesFilterClause(v string) string {
+	switch v {
+	case "default":
+		return `EXISTS (
+  SELECT 1 FROM stig_rule sr
+  JOIN asset_default_rev adr ON adr.asset_id = r.asset_id
+  WHERE sr.revision_id = adr.default_rev_id AND sr.rule_id = r.rule_id
+)`
+	case "not-default":
+		return `NOT EXISTS (
+  SELECT 1 FROM stig_rule sr
+  JOIN asset_default_rev adr ON adr.asset_id = r.asset_id
+  WHERE sr.revision_id = adr.default_rev_id AND sr.rule_id = r.rule_id
+)`
+	case "mapped", "default-mapped":
+		return `EXISTS (
+  SELECT 1
+    FROM stig_rule sr_rev
+    JOIN stig_rule sr_def
+      ON sr_def.version_str = sr_rev.version_str
+     AND sr_def.group_id    = sr_rev.group_id
+     AND sr_def.version_str <> ''
+    JOIN asset_default_rev adr
+      ON adr.asset_id = r.asset_id
+     AND sr_def.revision_id = adr.default_rev_id
+    WHERE sr_rev.rule_id = r.rule_id
+)`
+	case "not-mapped":
+		return `NOT EXISTS (
+  SELECT 1
+    FROM stig_rule sr_rev
+    JOIN stig_rule sr_def
+      ON sr_def.version_str = sr_rev.version_str
+     AND sr_def.group_id    = sr_rev.group_id
+     AND sr_def.version_str <> ''
+    JOIN asset_default_rev adr
+      ON adr.asset_id = r.asset_id
+     AND sr_def.revision_id = adr.default_rev_id
+    WHERE sr_rev.rule_id = r.rule_id
+)`
+	case "not-default-mapped":
+		return `NOT EXISTS (
+  SELECT 1 FROM stig_rule sr
+  JOIN asset_default_rev adr ON adr.asset_id = r.asset_id
+  WHERE sr.revision_id = adr.default_rev_id AND sr.rule_id = r.rule_id
+) AND EXISTS (
+  SELECT 1
+    FROM stig_rule sr_rev
+    JOIN stig_rule sr_def
+      ON sr_def.version_str = sr_rev.version_str
+     AND sr_def.group_id    = sr_rev.group_id
+     AND sr_def.version_str <> ''
+    JOIN asset_default_rev adr
+      ON adr.asset_id = r.asset_id
+     AND sr_def.revision_id = adr.default_rev_id
+    WHERE sr_rev.rule_id = r.rule_id
+)`
+	}
+	return ""
 }
 
 // classifyReviewErr maps Postgres errors that handlers want to surface
