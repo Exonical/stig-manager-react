@@ -67,6 +67,10 @@ type APIServer struct {
 	Checklists *store.ChecklistRepo
 	// Poam aggregates failing reviews into POA&M xlsx findings.
 	Poam *store.PoamRepo
+	// UserGroups is the data-layer entry point for `/user-groups/*`
+	// endpoints. Optional with the same fall-back semantics as the
+	// other repos.
+	UserGroups *store.UserGroupRepo
 }
 
 func (s APIServer) logErr(r *http.Request, op string, err error) {
