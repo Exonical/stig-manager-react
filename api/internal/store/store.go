@@ -25,6 +25,12 @@ var ErrNotFound = errors.New("store: not found")
 // collection with the same case-insensitive name is already enabled.
 var ErrDuplicateName = errors.New("store: duplicate collection name")
 
+// ErrConflict is returned when a write violates a uniqueness or
+// referential-integrity constraint that is meaningful to the API
+// client (e.g. an asset name already exists in the same collection,
+// or a label is being applied to an asset in another collection).
+var ErrConflict = errors.New("store: conflict")
+
 // Open creates and pings a Postgres connection pool.
 func Open(ctx context.Context, dsn string) (*Pool, error) {
 	cfg, err := pgxpool.ParseConfig(dsn)
