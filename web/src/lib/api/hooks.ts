@@ -21,6 +21,7 @@ import {
   deleteCollectionGrant,
   deleteJob,
   deleteReviewHistory,
+  deleteSTIG,
   deleteUser,
   deleteUserGroup,
   fetchAppDataTables,
@@ -29,6 +30,7 @@ import {
   fetchAsset,
   fetchAssets,
   fetchAssetStigs,
+  fetchCci,
   fetchCollection,
   fetchCollectionGrants,
   fetchCollections,
@@ -46,11 +48,15 @@ import {
   fetchReviewHistory,
   fetchReviewHistoryStats,
   fetchReviewsByAsset,
+  fetchRuleByRuleId,
   fetchRulesByRevision,
+  fetchSTIG,
+  fetchSTIGs,
   fetchUser,
   fetchUserGroup,
   fetchUserGroups,
   fetchUsers,
+  importBenchmark,
   postCollectionGrants,
   postReviewBatch,
   putCollectionGrant,
@@ -67,11 +73,14 @@ import {
   type AssetStig,
   type AssetUpdateInput,
   type CollectionGrant,
+  type CciDetail,
   type CollectionStig,
   type CollectionSummary,
   type CreateCollectionInput,
   type CurrentUser,
   type DeleteReviewHistoryInput,
+  type ImportBenchmarkInput,
+  type ImportBenchmarkResult,
   type GrantPostInput,
   type Job,
   type JobCreateInput,
@@ -92,6 +101,10 @@ import {
   type ReviewResult,
   type ReviewStatusLabel,
   type Rule,
+  type RuleDetail,
+  type STIGDetail,
+  type STIGSummary,
+  type STIGsFilter,
   type UserCreateInput,
   type UserGroupCreateInput,
   type UserGroupPatchInput,
@@ -110,9 +123,12 @@ export type {
   AssetForm,
   AssetStig,
   AssetUpdateInput,
+  CciDetail,
   CollectionGrant,
   CollectionStig,
   DeleteReviewHistoryInput,
+  ImportBenchmarkInput,
+  ImportBenchmarkResult,
   GrantPostInput,
   Job,
   JobCreateInput,
@@ -133,6 +149,10 @@ export type {
   ReviewResult,
   ReviewStatusLabel,
   Rule,
+  RuleDetail,
+  STIGDetail,
+  STIGSummary,
+  STIGsFilter,
   UserCreateInput,
   UserGroupCreateInput,
   UserGroupPatchInput,
@@ -183,6 +203,10 @@ export const QUERY_KEYS = {
   appInfoDetail: ['op', 'appinfo', 'detail'] as const,
   appDataTables: ['op', 'appdata', 'tables'] as const,
   collectionGrants: (cid: string) => ['collection', cid, 'grants'] as const,
+  stigs: (filter?: STIGsFilter) => ['stigs', filter ?? {}] as const,
+  stig: (benchmarkId: string) => ['stig', benchmarkId] as const,
+  rule: (ruleId: string) => ['rule', 'lookup', ruleId] as const,
+  cci: (cci: string) => ['cci', cci] as const,
 } as const
 
 export function useAppInfo(): UseQueryResult<AppInfo> {
@@ -830,6 +854,73 @@ export function useDeleteCollectionGrant(): UseMutationResult<
         queryKey: QUERY_KEYS.collectionGrants(collectionId),
       })
       void qc.invalidateQueries({ queryKey: QUERY_KEYS.user })
+    },
+  })
+}
+
+// ---- STIG Library (M18g) ----------------------------------------------------
+
+export function useSTIGs(
+  filter?: STIGsFilter,
+): UseQueryResult<STIGSummary[]> {
+  return useQuery({
+    queryKey: QUERY_KEYS.stigs(filter),
+    queryFn: () => fetchSTIGs(filter),
+  })
+}
+
+export function useSTIG(
+  benchmarkId: string | undefined,
+): UseQueryResult<STIGDetail> {
+  return useQuery({
+    queryKey: benchmarkId ? QUERY_KEYS.stig(benchmarkId) : ['stig', 'noop'],
+    queryFn: () => fetchSTIG(benchmarkId as string),
+    enabled: Boolean(benchmarkId),
+  })
+}
+
+export function useRuleByRuleId(
+  ruleId: string | undefined,
+): UseQueryResult<RuleDetail> {
+  return useQuery({
+    queryKey: ruleId ? QUERY_KEYS.rule(ruleId) : ['rule', 'lookup', 'noop'],
+    queryFn: () => fetchRuleByRuleId(ruleId as string),
+    enabled: Boolean(ruleId),
+    retry: false,
+  })
+}
+
+export function useCci(
+  cci: string | undefined,
+): UseQueryResult<CciDetail> {
+  return useQuery({
+    queryKey: cci ? QUERY_KEYS.cci(cci) : ['cci', 'noop'],
+    queryFn: () => fetchCci(cci as string),
+    enabled: Boolean(cci),
+    retry: false,
+  })
+}
+
+export function useImportBenchmark(): UseMutationResult<
+  ImportBenchmarkResult,
+  Error,
+  ImportBenchmarkInput
+> {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: importBenchmark,
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['stigs'] })
+    },
+  })
+}
+
+export function useDeleteSTIG(): UseMutationResult<void, Error, string> {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: deleteSTIG,
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['stigs'] })
     },
   })
 }

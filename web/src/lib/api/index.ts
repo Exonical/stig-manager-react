@@ -1424,3 +1424,172 @@ export async function deleteCollectionGrant(
   }
   return result.data as unknown as CollectionGrant
 }
+
+// ---- STIG Library (M18g) ----------------------------------------------------
+
+/** Summary projection for the STIG Library list. */
+export type STIGSummary = {
+  benchmarkId: string
+  title: string
+  lastRevisionStr?: string | null
+  lastRevisionDate?: string | null
+  marking?: string | null
+  status?: string | null
+  ruleCount?: number | null
+  revisionStrs?: string[]
+  collectionIds?: string[]
+}
+
+export type STIGDetail = STIGSummary
+
+export type STIGsFilter = {
+  title?: string
+}
+
+export async function fetchSTIGs(
+  filter?: STIGsFilter,
+): Promise<STIGSummary[]> {
+  const query: Record<string, string> = {
+    projection: 'revisions',
+  }
+  if (filter?.title && filter.title.trim().length > 0) {
+    query.title = filter.title.trim()
+  }
+  const result = await apiClient.GET('/stigs', {
+    params: { query: query as never },
+  })
+  if (!result.response.ok) {
+    throw new Error(`stigs: HTTP ${result.response.status}`)
+  }
+  return (result.data as unknown as STIGSummary[] | undefined) ?? []
+}
+
+export async function fetchSTIG(benchmarkId: string): Promise<STIGDetail> {
+  const result = await apiClient.GET('/stigs/{benchmarkId}', {
+    params: { path: { benchmarkId } },
+  })
+  if (!result.response.ok || !result.data) {
+    throw new Error(`stig: HTTP ${result.response.status}`)
+  }
+  return result.data as unknown as STIGDetail
+}
+
+/** Detail row for /stigs/rules/{ruleId}. */
+export type RuleDetail = {
+  ruleId?: string
+  version?: string
+  title?: string
+  severity?: string
+  groupId?: string
+  groupTitle?: string
+  check?: { content?: string | null; system?: string | null }
+  fix?: { text?: string | null; fixref?: string | null }
+  ccis?: Array<{ cci?: string }>
+  detail?: {
+    vulnDiscussion?: string | null
+    documentable?: string | null
+    falseNegatives?: string | null
+    falsePositives?: string | null
+    mitigationControl?: string | null
+    mitigations?: string | null
+    potentialImpacts?: string | null
+    responsibility?: string | null
+    severityOverrideGuidance?: string | null
+    thirdPartyTools?: string | null
+    weight?: string | null
+  }
+  stigs?: Array<{ benchmarkId?: string; revisionStr?: string }>
+}
+
+export async function fetchRuleByRuleId(ruleId: string): Promise<RuleDetail> {
+  const result = await apiClient.GET('/stigs/rules/{ruleId}', {
+    params: { path: { ruleId } },
+  })
+  if (!result.response.ok || !result.data) {
+    throw new Error(`rule: HTTP ${result.response.status}`)
+  }
+  return result.data as unknown as RuleDetail
+}
+
+/** Detail row for /stigs/ccis/{cci}. */
+export type CciDetail = {
+  cci?: string
+  definition?: string
+  type?: string
+  status?: string
+  publishdate?: string
+  stigs?: Array<{ benchmarkId?: string; revisionStr?: string }>
+}
+
+export async function fetchCci(cci: string): Promise<CciDetail> {
+  const result = await apiClient.GET('/stigs/ccis/{cci}', {
+    params: { path: { cci } },
+  })
+  if (!result.response.ok || !result.data) {
+    throw new Error(`cci: HTTP ${result.response.status}`)
+  }
+  return result.data as unknown as CciDetail
+}
+
+/** Response body shape for POST /stigs. */
+export type ImportBenchmarkResult = {
+  action?: string
+  benchmarkId?: string
+  revisionStr?: string
+  marking?: string
+}
+
+export type ImportBenchmarkInput = {
+  file: File
+  clobber?: boolean
+}
+
+/**
+ * Import a STIG XCCDF Benchmark. The server expects a multipart upload
+ * with a single `importFile` part — we do not use the openapi-fetch
+ * client here because multipart wiring through the typed client adds
+ * more friction than value for one endpoint.
+ */
+export async function importBenchmark(
+  input: ImportBenchmarkInput,
+): Promise<ImportBenchmarkResult> {
+  const url = new URL(`${API_BASE}/stigs`, window.location.origin)
+  if (input.clobber) url.searchParams.set('clobber', 'true')
+  url.searchParams.set('elevate', 'true')
+
+  const form = new FormData()
+  form.append('importFile', input.file)
+
+  const headers: Record<string, string> = {}
+  const token = getAccessTokenForClient()
+  if (token) headers['Authorization'] = `Bearer ${token}`
+
+  const resp = await fetch(url.toString(), {
+    method: 'POST',
+    headers,
+    body: form,
+    credentials: 'include',
+  })
+  if (!resp.ok) {
+    let detail = ''
+    try {
+      detail = (await resp.text()).slice(0, 512)
+    } catch {
+      // ignore body-read failure; we still have status
+    }
+    throw new Error(
+      `import benchmark: HTTP ${resp.status}${detail ? ` — ${detail}` : ''}`,
+    )
+  }
+  return (await resp.json()) as ImportBenchmarkResult
+}
+
+export async function deleteSTIG(benchmarkId: string): Promise<void> {
+  const query: Record<string, string> = { elevate: 'true' }
+  const result = await apiClient.DELETE('/stigs/{benchmarkId}', {
+    params: { path: { benchmarkId }, query: query as never },
+  })
+  if (!result.response.ok) {
+    throw new Error(`delete stig: HTTP ${result.response.status}`)
+  }
+}

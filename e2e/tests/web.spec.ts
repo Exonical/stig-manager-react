@@ -372,4 +372,56 @@ test.describe('Web SPA', () => {
       page.getByTestId('grants-table').getByText('Owner'),
     ).toBeVisible({ timeout: 10_000 })
   })
+
+  test('library page renders with lookup cards (M18g)', async ({ page }) => {
+    await page.goto(`${urls.web}/library`)
+    await expect(page.getByTestId('library-list-page')).toBeVisible()
+    await expect(page.getByTestId('library-table')).toBeVisible()
+    await expect(page.getByTestId('library-search')).toBeVisible()
+    await expect(page.getByTestId('rule-lookup-card')).toBeVisible()
+    await expect(page.getByTestId('cci-lookup-card')).toBeVisible()
+    // Admin has stig-manager:stig so the Import button must render.
+    await expect(page.getByTestId('import-benchmark-button')).toBeVisible()
+  })
+
+  test('library rule lookup surfaces 404 for unknown rule (M18g)', async ({
+    page,
+  }) => {
+    await page.goto(`${urls.web}/library`)
+    await expect(page.getByTestId('rule-lookup-card')).toBeVisible()
+    await page
+      .getByTestId('rule-lookup-input')
+      .fill('SV-99999999r1_rule')
+    await page.getByTestId('rule-lookup-submit').click()
+    // Either a result or an error must render — the API returns 404
+    // for unknown rules, which our hook surfaces as an error.
+    await expect(page.getByTestId('rule-lookup-error')).toBeVisible({
+      timeout: 10_000,
+    })
+  })
+
+  test('library cci lookup surfaces 404 for unknown cci (M18g)', async ({
+    page,
+  }) => {
+    await page.goto(`${urls.web}/library`)
+    await expect(page.getByTestId('cci-lookup-card')).toBeVisible()
+    await page.getByTestId('cci-lookup-input').fill('999999')
+    await page.getByTestId('cci-lookup-submit').click()
+    await expect(page.getByTestId('cci-lookup-error')).toBeVisible({
+      timeout: 10_000,
+    })
+  })
+
+  test('library import dialog opens and validates file input (M18g)', async ({
+    page,
+  }) => {
+    await page.goto(`${urls.web}/library`)
+    await page.getByTestId('import-benchmark-button').click()
+    const dialog = page.getByTestId('import-stig-dialog')
+    await expect(dialog).toBeVisible()
+    await expect(dialog.getByTestId('import-file-input')).toBeVisible()
+    await expect(dialog.getByTestId('import-clobber-checkbox')).toBeVisible()
+    // Submit is disabled until a file is chosen.
+    await expect(dialog.getByTestId('import-stig-submit')).toBeDisabled()
+  })
 })

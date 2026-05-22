@@ -13,8 +13,9 @@ import { ReviewEditorPage } from './pages/assets/review-editor'
 import { CollectionDetailPage } from './pages/collections/detail'
 import { CollectionsListPage } from './pages/collections/list'
 import { DashboardPage } from './pages/dashboard'
+import { LibraryDetailPage } from './pages/library/detail'
+import { LibraryListPage } from './pages/library/list'
 import { NotFoundPage } from './pages/not-found'
-import { Placeholder } from './pages/placeholder'
 import { SignInPage } from './pages/sign-in'
 
 export const router = createBrowserRouter([
@@ -67,11 +68,15 @@ export const router = createBrowserRouter([
         path: 'library',
         element: (
           <RequireScope scope="stig-manager:stig:read">
-            <Placeholder
-              title="STIG Library"
-              blurb="Browse benchmarks, rules, and CCIs. Import XCCDF bundles."
-              milestone="18g"
-            />
+            <LibraryListPage />
+          </RequireScope>
+        ),
+      },
+      {
+        path: 'library/:benchmarkId',
+        element: (
+          <RequireScope scope="stig-manager:stig:read">
+            <LibraryDetailPage />
           </RequireScope>
         ),
       },
