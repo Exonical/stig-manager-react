@@ -38,7 +38,10 @@ export function NewCollectionDialog({
   const [description, setDescription] = React.useState('')
   const [error, setError] = React.useState<string | null>(null)
 
-  // Reset on close so reopening doesn't show stale text.
+  // Reset on close so reopening doesn't show stale text. `create` is a
+  // TanStack-Query useMutation result whose object reference is unstable
+  // across renders; including it in the deps causes the effect to run
+  // every render and starves React's navigation transitions.
   React.useEffect(() => {
     if (!open) {
       setName('')
@@ -46,7 +49,8 @@ export function NewCollectionDialog({
       setError(null)
       create.reset()
     }
-  }, [open, create])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -65,8 +69,8 @@ export function NewCollectionDialog({
         description: description.trim() || undefined,
         grants: [{ userId: me.data.userId, roleId: 4 }],
       })
-      onOpenChange(false)
       navigate(`/collections/${created.collectionId}`)
+      onOpenChange(false)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create collection.')
     }

@@ -126,8 +126,8 @@ export function NewAssetDialog({
         onOpenChange(false)
       } else {
         const created = await create.mutateAsync(body)
-        onOpenChange(false)
         navigate(`/collections/${collectionId}/assets/${created.assetId}`)
+        onOpenChange(false)
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save asset.')
