@@ -26,6 +26,7 @@ import {
   fetchReviewByAssetRule,
   fetchReviewsByAsset,
   fetchRulesByRevision,
+  postReviewBatch,
   putReviewByAssetRule,
   updateAsset,
   type AppInfo,
@@ -38,6 +39,9 @@ import {
   type CreateCollectionInput,
   type CurrentUser,
   type Review,
+  type ReviewBatchInput,
+  type ReviewBatchResponse,
+  type ReviewBatchResponseDryRun,
   type ReviewPutInput,
   type ReviewResult,
   type ReviewStatusLabel,
@@ -53,6 +57,9 @@ export type {
   AssetUpdateInput,
   CollectionStig,
   Review,
+  ReviewBatchInput,
+  ReviewBatchResponse,
+  ReviewBatchResponseDryRun,
   ReviewPutInput,
   ReviewResult,
   ReviewStatusLabel,
@@ -330,6 +337,23 @@ export function usePutReview(): UseMutationResult<
       void qc.invalidateQueries({
         queryKey: QUERY_KEYS.reviewsByAsset(collectionId, assetId),
       })
+    },
+  })
+}
+
+export function useReviewBatch(): UseMutationResult<
+  ReviewBatchResponse | ReviewBatchResponseDryRun,
+  Error,
+  { collectionId: string; body: ReviewBatchInput }
+> {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ collectionId, body }) => postReviewBatch(collectionId, body),
+    onSuccess: (_data, { collectionId, body }) => {
+      // Real (non-dry-run) writes will have changed reviews under one
+      // or more assets — invalidate the list view conservatively.
+      if (body.dryRun) return
+      void qc.invalidateQueries({ queryKey: ['reviews', collectionId] })
     },
   })
 }

@@ -130,4 +130,58 @@ test.describe('Web SPA', () => {
       page.getByTestId('assets-table').getByText(assetName),
     ).toBeVisible({ timeout: 10_000 })
   })
+
+  test('dry-run batch review surfaces will-insert counts (M18d)', async ({
+    page,
+  }) => {
+    await page.goto(`${urls.web}/collections`)
+    const collectionName = `e2e-batch-coll-${Date.now()}`
+    await page.getByTestId('new-collection-button').click()
+    const cdialog = page.getByTestId('new-collection-dialog')
+    await cdialog.getByTestId('new-collection-name-input').fill(collectionName)
+    await cdialog.getByTestId('new-collection-submit').click()
+    await expect(page).toHaveURL(/\/collections\/\d+$/, { timeout: 10_000 })
+
+    // Create an asset so the batch resolution has something to land on.
+    await page.getByTestId('collection-tab-assets').click()
+    await page.getByTestId('new-asset-button').click()
+    const adialog = page.getByTestId('new-asset-dialog')
+    const assetName = `e2e-batch-asset-${Date.now()}`
+    await adialog.getByTestId('asset-name-input').fill(assetName)
+    await adialog.getByTestId('asset-ip-input').fill('10.0.0.99')
+    await adialog.getByTestId('new-asset-submit').click()
+    await expect(page).toHaveURL(/\/collections\/\d+\/assets\/\d+$/, {
+      timeout: 10_000,
+    })
+
+    // Capture the collection ID + asset ID from the URL for the form.
+    const url = page.url()
+    const match = url.match(/\/collections\/(\d+)\/assets\/(\d+)/)
+    expect(match).not.toBeNull()
+    const assetId = match![2]
+
+    // Back to the Collection and open the Reviews (Batch Review) tab.
+    await page.getByRole('link', { name: /back to/i }).click()
+    await expect(page.getByTestId('collection-detail-page')).toBeVisible()
+    await page.getByTestId('collection-tab-reviews').click()
+    await expect(page.getByTestId('collection-reviews-tab')).toBeVisible()
+
+    // Asset criterion: pick the asset we just created.
+    await page.getByTestId(`batch-asset-list-${assetId}`).check()
+
+    // Rule criterion: type a fake rule ID. The API will resolve zero
+    // matching (asset,rule) pairs because the asset isn't mapped to any
+    // benchmark yet — so we expect a "zero willInsert" dry run, which
+    // still proves the form wires up end-to-end.
+    await page.getByTestId('batch-rule-ids').fill('SV-0000r1_rule')
+
+    // Submit dry run.
+    await page.getByTestId('batch-dry-run').click()
+    await expect(page.getByTestId('batch-result-dry')).toBeVisible({
+      timeout: 10_000,
+    })
+    await expect(page.getByTestId('batch-count-insert')).toContainText(
+      /Will insert: 0/,
+    )
+  })
 })

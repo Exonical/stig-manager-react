@@ -8,6 +8,7 @@ import { ArrowLeft, Loader2 } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
 
 import { AssetsTab } from '../assets/assets-tab'
+import { ReviewsTab } from './reviews-tab'
 import {
   Card,
   CardContent,
@@ -50,9 +51,9 @@ const TABS: readonly TabDef[] = [
     value: 'reviews',
     label: 'Reviews',
     minRole: 1,
-    milestone: 'M18c',
+    milestone: 'M18d',
     blurb:
-      'Single-asset Review workspace \u2014 inspect rule findings and submit reviews.',
+      'Batch Review workspace \u2014 apply a single review across many (asset, rule) pairs.',
   },
   {
     value: 'labels',
@@ -180,8 +181,19 @@ export function CollectionDetailPage() {
           </TabsContent>
         )}
 
+        {visibleTabs.some((t) => t.value === 'reviews') && (
+          <TabsContent value="reviews">
+            <ReviewsTab collectionId={c.collectionId} role={role} />
+          </TabsContent>
+        )}
+
         {visibleTabs
-          .filter((t) => t.value !== 'overview' && t.value !== 'assets')
+          .filter(
+            (t) =>
+              t.value !== 'overview' &&
+              t.value !== 'assets' &&
+              t.value !== 'reviews',
+          )
           .map((tab) => (
             <TabsContent key={tab.value} value={tab.value}>
               <StubTab
