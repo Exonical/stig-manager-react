@@ -121,6 +121,54 @@ func (s APIServer) CreateUser(w http.ResponseWriter, r *http.Request, params api
 	writeJSON(w, http.StatusCreated, toAPIUser(created, userProjection(params.Projection)))
 }
 
+// GetUser — GET /user. Returns the authenticated principal's app_user
+// row, upserting first so first-time visitors get a row immediately.
+//
+// Deliberately does NOT enforce the `stig-manager:user:read` scope
+// recommended by the upstream OpenAPI: a user reading their own
+// record is not an admin operation. Without this concession every
+// signed-in user would need :read just to see their own userId in the
+// SPA, even though the OIDC token already carries the same identity
+// claims.
+func (s APIServer) GetUser(w http.ResponseWriter, r *http.Request, _ api.GetUserParams) {
+	user, ok := auth.FromContext(r.Context())
+	if !ok {
+		writeAuthError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+	if s.Users == nil {
+		writeAuthError(w, http.StatusServiceUnavailable, "database unavailable")
+		return
+	}
+	if _, err := s.Users.Upsert(r.Context(),
+		user.Subject, user.Username, user.Name, user.Email, user.Raw,
+	); err != nil {
+		s.logErr(r, "upsert current user", err)
+		writeAuthError(w, http.StatusInternalServerError, "failed to record user")
+		return
+	}
+	appUser, err := s.Users.GetBySubject(r.Context(), user.Subject)
+	if err != nil {
+		s.logErr(r, "get current user by subject", err)
+		writeAuthError(w, http.StatusInternalServerError, "failed to fetch user")
+		return
+	}
+	row, err := s.Users.GetAdmin(r.Context(), appUser.UserID)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeAuthError(w, http.StatusNotFound, "user not found")
+			return
+		}
+		s.logErr(r, "get current user", err)
+		writeAuthError(w, http.StatusInternalServerError, "failed to fetch user")
+		return
+	}
+	// Always project collectionGrants for /user — the SPA needs them to
+	// know which role the user holds in each visible collection without
+	// a second round-trip.
+	writeJSON(w, http.StatusOK, toAPIUser(row, userProjectionFlags{collectionGrants: true, userGroups: true}))
+}
+
 // GetUserByUserId — GET /users/{userId}.
 func (s APIServer) GetUserByUserId(w http.ResponseWriter, r *http.Request, userId api.UserIdPath, params api.GetUserByUserIdParams) {
 	if !s.requireUsersScope(w, r, "stig-manager:user:read") {
