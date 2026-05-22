@@ -10,6 +10,7 @@ import {
   Layers,
   ShieldCheck,
   Users,
+  UsersRound,
 } from 'lucide-react'
 
 import type { ScopeName } from '@/lib/auth/scopes'
@@ -36,12 +37,6 @@ export const PRIMARY_NAV: readonly NavItem[] = [
     icon: BookOpen,
     scope: 'stig-manager:stig:read',
   },
-  {
-    to: '/jobs',
-    label: 'Jobs',
-    icon: Briefcase,
-    scope: 'stig-manager:op:read',
-  },
 ] as const
 
 export const ADMIN_NAV: readonly NavItem[] = [
@@ -50,6 +45,18 @@ export const ADMIN_NAV: readonly NavItem[] = [
     label: 'Users',
     icon: Users,
     scope: 'stig-manager:user:read',
+  },
+  {
+    to: '/admin/user-groups',
+    label: 'User Groups',
+    icon: UsersRound,
+    scope: 'stig-manager:user:read',
+  },
+  {
+    to: '/admin/jobs',
+    label: 'Jobs',
+    icon: Briefcase,
+    scope: 'stig-manager:op:read',
   },
   {
     to: '/admin/app-info',
