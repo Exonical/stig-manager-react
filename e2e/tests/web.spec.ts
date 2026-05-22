@@ -3,42 +3,38 @@ import { expect, test } from '@playwright/test'
 import { urls } from '../playwright.config'
 
 test.describe('Web SPA', () => {
-  test('loads and reflects signed-in state', async ({ page }) => {
+  test('renders the app shell when signed in', async ({ page }) => {
     await page.goto(urls.web)
+
+    // Topbar reflects the signed-in identity.
     await expect(page.getByText(/signed in as/i)).toBeVisible()
-    // The auth header includes a <strong> with the principal name —
-    // grab whatever <strong> appears next to "Signed in as" and
-    // verify it is non-empty rather than asserting a specific value
-    // (Keycloak's account-update step may rewrite the display name).
-    const name = await page
-      .locator('header strong')
-      .first()
-      .textContent()
+    const name = await page.locator('header strong').first().textContent()
     expect(name?.trim().length ?? 0).toBeGreaterThan(0)
+
+    // Sidebar nav is rendered (Dashboard is always present once signed in).
+    const sidebar = page.getByTestId('app-sidebar')
+    await expect(sidebar).toBeVisible()
+    await expect(sidebar.getByTestId('nav-dashboard')).toBeVisible()
   })
 
-  test('fetch app info button surfaces /api/op/appinfo', async ({ page }) => {
+  test('dashboard surfaces /api/op/appinfo', async ({ page }) => {
     await page.goto(urls.web)
-    await page.getByRole('button', { name: /fetch app info/i }).click()
-
-    // The payload is rendered as a JSON <pre> block; rather than
-    // asserting on specific keys (which evolve with M15/M16/…) just
-    // confirm the rendering happened by checking for a non-empty pre.
-    const pre = page.locator('pre').first()
-    await expect(pre).toBeVisible()
-    const text = (await pre.textContent()) ?? ''
-    expect(text.trim().length).toBeGreaterThan(2)
+    const tile = page.getByTestId('dashboard-appinfo-tile')
+    await expect(tile).toBeVisible()
+    // The version line lands inside the card description; require a
+    // string starting with "API " rendered by the appinfo hook.
+    await expect(tile.getByText(/^API /)).toBeVisible({ timeout: 10_000 })
   })
 
-  test('list collections renders the API response', async ({ page }) => {
+  test('collections nav lands on the collections page', async ({ page }) => {
     await page.goto(urls.web)
-    await page.getByRole('button', { name: /list collections/i }).click()
-
-    const pre = page.locator('pre').last()
-    await expect(pre).toBeVisible()
-    const text = (await pre.textContent()) ?? ''
-    // Either an empty-state message or a JSON array — both are
-    // acceptable depending on whether the API test ran first.
-    expect(text).toMatch(/(no collections|\[)/i)
+    await page
+      .getByTestId('app-sidebar')
+      .getByTestId('nav-collections')
+      .click()
+    await expect(page).toHaveURL(/\/collections$/)
+    await expect(
+      page.getByRole('heading', { name: /collections/i }),
+    ).toBeVisible()
   })
 })
