@@ -12,16 +12,52 @@ import {
 
 import { apiClient } from './client'
 import {
+  createAsset,
   createCollection,
+  deleteAsset,
   fetchAppInfo,
+  fetchAsset,
+  fetchAssets,
+  fetchAssetStigs,
   fetchCollection,
   fetchCollections,
+  fetchCollectionStigs,
   fetchCurrentUser,
+  fetchReviewByAssetRule,
+  fetchReviewsByAsset,
+  fetchRulesByRevision,
+  putReviewByAssetRule,
+  updateAsset,
   type AppInfo,
+  type Asset,
+  type AssetForm,
+  type AssetStig,
+  type AssetUpdateInput,
+  type CollectionStig,
   type CollectionSummary,
   type CreateCollectionInput,
   type CurrentUser,
+  type Review,
+  type ReviewPutInput,
+  type ReviewResult,
+  type ReviewStatusLabel,
+  type Rule,
 } from './index'
+
+// Re-export commonly-used types for consumers that already import
+// from this module.
+export type {
+  Asset,
+  AssetForm,
+  AssetStig,
+  AssetUpdateInput,
+  CollectionStig,
+  Review,
+  ReviewPutInput,
+  ReviewResult,
+  ReviewStatusLabel,
+  Rule,
+}
 
 export const QUERY_KEYS = {
   appInfo: ['op', 'appinfo'] as const,
@@ -29,6 +65,16 @@ export const QUERY_KEYS = {
   user: ['user'] as const,
   collections: ['collections'] as const,
   collection: (id: string) => ['collection', id] as const,
+  collectionStigs: (id: string) => ['collection', id, 'stigs'] as const,
+  assets: (collectionId: string) => ['assets', collectionId] as const,
+  asset: (id: string) => ['asset', id] as const,
+  assetStigs: (id: string) => ['asset', id, 'stigs'] as const,
+  rulesByRevision: (b: string, r: string) =>
+    ['rules', b, r] as const,
+  reviewsByAsset: (cid: string, aid: string) =>
+    ['reviews', cid, aid] as const,
+  review: (cid: string, aid: string, ruleId: string) =>
+    ['review', cid, aid, ruleId] as const,
 } as const
 
 export function useAppInfo(): UseQueryResult<AppInfo> {
@@ -101,5 +147,184 @@ export function useOpState(): UseQueryResult<OpState> {
     // Short stale time so the dashboard's "is the backend up" tile
     // refreshes on revisit without spamming the endpoint.
     staleTime: 5_000,
+  })
+}
+
+// ---- Assets -------------------------------------------------------------
+
+export function useAssets(params: {
+  collectionId: string | undefined
+  name?: string
+  labelId?: string
+}): UseQueryResult<Asset[]> {
+  const { collectionId, name, labelId } = params
+  const key: readonly unknown[] = collectionId
+    ? [...QUERY_KEYS.assets(collectionId), { name: name ?? '', labelId: labelId ?? '' }]
+    : ['assets', 'noop']
+  return useQuery({
+    queryKey: key,
+    queryFn: () =>
+      fetchAssets({
+        collectionId: collectionId as string,
+        name: name || undefined,
+        labelId: labelId || undefined,
+      }),
+    enabled: Boolean(collectionId),
+  })
+}
+
+export function useAsset(assetId: string | undefined): UseQueryResult<Asset> {
+  return useQuery({
+    queryKey: assetId ? QUERY_KEYS.asset(assetId) : ['asset', 'noop'],
+    queryFn: () => fetchAsset(assetId as string),
+    enabled: Boolean(assetId),
+  })
+}
+
+export function useAssetStigs(
+  assetId: string | undefined,
+): UseQueryResult<AssetStig[]> {
+  return useQuery({
+    queryKey: assetId ? QUERY_KEYS.assetStigs(assetId) : ['asset', 'noop', 'stigs'],
+    queryFn: () => fetchAssetStigs(assetId as string),
+    enabled: Boolean(assetId),
+  })
+}
+
+export function useCollectionStigs(
+  collectionId: string | undefined,
+): UseQueryResult<CollectionStig[]> {
+  return useQuery({
+    queryKey: collectionId ? QUERY_KEYS.collectionStigs(collectionId) : ['collection', 'noop', 'stigs'],
+    queryFn: () => fetchCollectionStigs(collectionId as string),
+    enabled: Boolean(collectionId),
+  })
+}
+
+export function useCreateAsset(): UseMutationResult<Asset, Error, AssetForm> {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: createAsset,
+    onSuccess: (asset) => {
+      const cid = asset.collection?.collectionId
+      if (cid) {
+        void qc.invalidateQueries({ queryKey: QUERY_KEYS.assets(cid) })
+        void qc.invalidateQueries({ queryKey: QUERY_KEYS.collectionStigs(cid) })
+      }
+    },
+  })
+}
+
+export function useUpdateAsset(): UseMutationResult<
+  Asset,
+  Error,
+  { assetId: string; input: AssetUpdateInput }
+> {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ assetId, input }) => updateAsset(assetId, input),
+    onSuccess: (asset) => {
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.asset(asset.assetId) })
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.assetStigs(asset.assetId) })
+      const cid = asset.collection?.collectionId
+      if (cid) {
+        void qc.invalidateQueries({ queryKey: QUERY_KEYS.assets(cid) })
+      }
+    },
+  })
+}
+
+export function useDeleteAsset(): UseMutationResult<
+  Asset,
+  Error,
+  { assetId: string; collectionId?: string }
+> {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ assetId }) => deleteAsset(assetId),
+    onSuccess: (_data, { collectionId }) => {
+      if (collectionId) {
+        void qc.invalidateQueries({ queryKey: QUERY_KEYS.assets(collectionId) })
+      }
+    },
+  })
+}
+
+// ---- Rules & Reviews ----------------------------------------------------
+
+export function useRulesByRevision(
+  benchmarkId: string | undefined,
+  revisionStr: string | undefined,
+): UseQueryResult<Rule[]> {
+  return useQuery({
+    queryKey:
+      benchmarkId && revisionStr
+        ? QUERY_KEYS.rulesByRevision(benchmarkId, revisionStr)
+        : ['rules', 'noop'],
+    queryFn: () =>
+      fetchRulesByRevision(benchmarkId as string, revisionStr as string),
+    enabled: Boolean(benchmarkId && revisionStr),
+    // Rules are revision-static; cache aggressively.
+    staleTime: 5 * 60_000,
+  })
+}
+
+export function useReviewsByAsset(
+  collectionId: string | undefined,
+  assetId: string | undefined,
+): UseQueryResult<Review[]> {
+  return useQuery({
+    queryKey:
+      collectionId && assetId
+        ? QUERY_KEYS.reviewsByAsset(collectionId, assetId)
+        : ['reviews', 'noop'],
+    queryFn: () =>
+      fetchReviewsByAsset(collectionId as string, assetId as string),
+    enabled: Boolean(collectionId && assetId),
+  })
+}
+
+export function useReview(
+  collectionId: string | undefined,
+  assetId: string | undefined,
+  ruleId: string | undefined,
+): UseQueryResult<Review | null> {
+  return useQuery({
+    queryKey:
+      collectionId && assetId && ruleId
+        ? QUERY_KEYS.review(collectionId, assetId, ruleId)
+        : ['review', 'noop'],
+    queryFn: () =>
+      fetchReviewByAssetRule(
+        collectionId as string,
+        assetId as string,
+        ruleId as string,
+      ),
+    enabled: Boolean(collectionId && assetId && ruleId),
+  })
+}
+
+export function usePutReview(): UseMutationResult<
+  Review,
+  Error,
+  {
+    collectionId: string
+    assetId: string
+    ruleId: string
+    body: ReviewPutInput
+  }
+> {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ collectionId, assetId, ruleId, body }) =>
+      putReviewByAssetRule(collectionId, assetId, ruleId, body),
+    onSuccess: (_data, { collectionId, assetId, ruleId }) => {
+      void qc.invalidateQueries({
+        queryKey: QUERY_KEYS.review(collectionId, assetId, ruleId),
+      })
+      void qc.invalidateQueries({
+        queryKey: QUERY_KEYS.reviewsByAsset(collectionId, assetId),
+      })
+    },
   })
 }

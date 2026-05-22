@@ -82,4 +82,52 @@ test.describe('Web SPA', () => {
       page.getByTestId('collections-table').getByText(name),
     ).toBeVisible({ timeout: 10_000 })
   })
+
+  test('creates an Asset inside a Collection and opens its detail page', async ({
+    page,
+  }) => {
+    await page.goto(`${urls.web}/collections`)
+
+    // Reuse the same pattern: create a fresh collection, then create
+    // an asset inside it.
+    const collectionName = `e2e-asset-coll-${Date.now()}`
+    await page.getByTestId('new-collection-button').click()
+    const cdialog = page.getByTestId('new-collection-dialog')
+    await cdialog.getByTestId('new-collection-name-input').fill(collectionName)
+    await cdialog.getByTestId('new-collection-submit').click()
+    await expect(page).toHaveURL(/\/collections\/\d+$/, { timeout: 10_000 })
+    await expect(page.getByTestId('collection-detail-page')).toBeVisible()
+
+    // Open the Assets tab and create an asset.
+    await page.getByTestId('collection-tab-assets').click()
+    await expect(page.getByTestId('collection-assets-tab')).toBeVisible()
+    await expect(page.getByTestId('new-asset-button')).toBeVisible()
+    await page.getByTestId('new-asset-button').click()
+
+    const adialog = page.getByTestId('new-asset-dialog')
+    await expect(adialog).toBeVisible()
+    const assetName = `e2e-asset-${Date.now()}`
+    await adialog.getByTestId('asset-name-input').fill(assetName)
+    await adialog.getByTestId('asset-ip-input').fill('10.0.0.42')
+    await adialog
+      .getByTestId('asset-description-input')
+      .fill('created from the M18c playwright suite')
+    await adialog.getByTestId('new-asset-submit').click()
+
+    // Navigate to the asset detail page on success.
+    await expect(page).toHaveURL(/\/collections\/\d+\/assets\/\d+$/, {
+      timeout: 10_000,
+    })
+    await expect(page.getByTestId('asset-detail-page')).toBeVisible()
+    await expect(page.getByRole('heading', { name: assetName })).toBeVisible()
+
+    // Navigating back lands on the Collection detail. Re-open the
+    // Assets tab; our asset is in the list.
+    await page.getByRole('link', { name: /back to/i }).click()
+    await expect(page.getByTestId('collection-detail-page')).toBeVisible()
+    await page.getByTestId('collection-tab-assets').click()
+    await expect(
+      page.getByTestId('assets-table').getByText(assetName),
+    ).toBeVisible({ timeout: 10_000 })
+  })
 })

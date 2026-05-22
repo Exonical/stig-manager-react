@@ -7,6 +7,7 @@
 import { ArrowLeft, Loader2 } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
 
+import { AssetsTab } from '../assets/assets-tab'
 import {
   Card,
   CardContent,
@@ -38,8 +39,9 @@ const TABS: readonly TabDef[] = [
   },
   {
     value: 'assets',
+    // Assets tab is implemented in M18c — see <AssetsTab/>.
     label: 'Assets',
-    minRole: 2,
+    minRole: 1,
     milestone: 'M18c',
     blurb:
       'Manage the Collection\u2019s Assets (hardware/software targets) and their STIG assignments.',
@@ -172,8 +174,14 @@ export function CollectionDetailPage() {
           <OverviewTab collection={c} />
         </TabsContent>
 
+        {visibleTabs.some((t) => t.value === 'assets') && (
+          <TabsContent value="assets">
+            <AssetsTab collectionId={c.collectionId} role={role} />
+          </TabsContent>
+        )}
+
         {visibleTabs
-          .filter((t) => t.value !== 'overview')
+          .filter((t) => t.value !== 'overview' && t.value !== 'assets')
           .map((tab) => (
             <TabsContent key={tab.value} value={tab.value}>
               <StubTab
