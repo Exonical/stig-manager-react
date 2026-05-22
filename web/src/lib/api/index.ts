@@ -885,3 +885,542 @@ export async function downloadPoam(
   )
   downloadBlob(blob, filename || `poam-${collectionId}.xlsx`)
 }
+
+// ---- Users / User Groups (M18f) ----------------------------------------
+
+export type UserStatus = 'available' | 'unavailable'
+
+export type CollectionGrantInput = {
+  collectionId: string
+  roleId: 1 | 2 | 3 | 4
+}
+
+export type UserSummary = {
+  userId: string
+  username: string
+  displayName?: string
+  email?: string | null
+  status?: UserStatus
+  statusDate?: string
+  statusUser?: { userId?: string; username?: string } | null
+  lastAccess?: number | null
+  privileges?: {
+    admin?: boolean
+    create_collection?: boolean
+  }
+  collectionGrants?: Array<{
+    roleId?: number
+    collection?: { collectionId?: string; name?: string }
+  }>
+  userGroups?: Array<{
+    userGroupId?: string
+    name?: string
+  }>
+}
+
+export type UsersFilter = {
+  username?: string
+  usernameMatch?: 'exact' | 'startsWith' | 'endsWith' | 'contains'
+  status?: UserStatus
+  privilege?: 'admin' | 'create_collection'
+}
+
+/**
+ * Lists Users visible to the requester. Requires the
+ * `stig-manager:user:read` scope.
+ */
+export async function fetchUsers(
+  filter?: UsersFilter,
+): Promise<UserSummary[]> {
+  const query: Record<string, string> = {
+    elevate: 'true',
+    projection: 'collectionGrants',
+  }
+  if (filter?.username) query['username'] = filter.username
+  if (filter?.usernameMatch) query['username-match'] = filter.usernameMatch
+  if (filter?.status) query['status'] = filter.status
+  if (filter?.privilege) query['privilege'] = filter.privilege
+  const result = await apiClient.GET('/users', {
+    params: { query: query as never },
+  })
+  if (!result.response.ok || !result.data) {
+    throw new Error(`users: HTTP ${result.response.status}`)
+  }
+  return result.data as unknown as UserSummary[]
+}
+
+export async function fetchUser(userId: string): Promise<UserSummary> {
+  const query: Record<string, string> = {
+    elevate: 'true',
+    projection: 'collectionGrants',
+  }
+  const result = await apiClient.GET('/users/{userId}', {
+    params: { path: { userId }, query: query as never },
+  })
+  if (!result.response.ok || !result.data) {
+    throw new Error(`user ${userId}: HTTP ${result.response.status}`)
+  }
+  return result.data as unknown as UserSummary
+}
+
+export type UserCreateInput = {
+  username: string
+  collectionGrants: CollectionGrantInput[]
+  userGroups?: string[]
+}
+
+export async function createUser(input: UserCreateInput): Promise<UserSummary> {
+  const result = await apiClient.POST('/users', {
+    params: { query: { elevate: true } as never },
+    body: input as never,
+  })
+  if (!result.response.ok || !result.data) {
+    throw new Error(`create user: HTTP ${result.response.status}`)
+  }
+  return result.data as unknown as UserSummary
+}
+
+export type UserPatchInput = {
+  username?: string
+  status?: UserStatus
+  collectionGrants?: CollectionGrantInput[]
+  userGroups?: string[]
+}
+
+export async function updateUser(
+  userId: string,
+  input: UserPatchInput,
+): Promise<UserSummary> {
+  const result = await apiClient.PATCH('/users/{userId}', {
+    params: { path: { userId }, query: { elevate: true } as never },
+    body: input as never,
+  })
+  if (!result.response.ok || !result.data) {
+    throw new Error(`update user: HTTP ${result.response.status}`)
+  }
+  return result.data as unknown as UserSummary
+}
+
+export async function deleteUser(userId: string): Promise<UserSummary> {
+  const result = await apiClient.DELETE('/users/{userId}', {
+    params: { path: { userId }, query: { elevate: true } as never },
+  })
+  if (!result.response.ok) {
+    throw new Error(`delete user: HTTP ${result.response.status}`)
+  }
+  return result.data as unknown as UserSummary
+}
+
+export type UserGroupSummary = {
+  userGroupId: string
+  name: string
+  description?: string | null
+  users?: Array<{ userId?: string; username?: string; displayName?: string }>
+  collectionGrants?: Array<{
+    roleId?: number
+    collection?: { collectionId?: string; name?: string }
+  }>
+}
+
+export async function fetchUserGroups(): Promise<UserGroupSummary[]> {
+  const query: Record<string, string> = {
+    elevate: 'true',
+    projection: 'users',
+  }
+  const result = await apiClient.GET('/user-groups', {
+    params: { query: query as never },
+  })
+  if (!result.response.ok || !result.data) {
+    throw new Error(`user groups: HTTP ${result.response.status}`)
+  }
+  return result.data as unknown as UserGroupSummary[]
+}
+
+export async function fetchUserGroup(
+  userGroupId: string,
+): Promise<UserGroupSummary> {
+  const query: Record<string, string> = {
+    elevate: 'true',
+    projection: 'users',
+  }
+  const result = await apiClient.GET('/user-groups/{userGroupId}', {
+    params: { path: { userGroupId }, query: query as never },
+  })
+  if (!result.response.ok || !result.data) {
+    throw new Error(`user group ${userGroupId}: HTTP ${result.response.status}`)
+  }
+  return result.data as unknown as UserGroupSummary
+}
+
+export type UserGroupCreateInput = {
+  name: string
+  description?: string | null
+  userIds?: string[]
+  collectionGrants?: CollectionGrantInput[]
+}
+
+export async function createUserGroup(
+  input: UserGroupCreateInput,
+): Promise<UserGroupSummary> {
+  const result = await apiClient.POST('/user-groups', {
+    params: { query: { elevate: true } as never },
+    body: input as never,
+  })
+  if (!result.response.ok || !result.data) {
+    throw new Error(`create user group: HTTP ${result.response.status}`)
+  }
+  return result.data as unknown as UserGroupSummary
+}
+
+export type UserGroupPatchInput = {
+  name?: string
+  description?: string | null
+  userIds?: string[]
+  collectionGrants?: CollectionGrantInput[]
+}
+
+export async function updateUserGroup(
+  userGroupId: string,
+  input: UserGroupPatchInput,
+): Promise<UserGroupSummary> {
+  const result = await apiClient.PATCH('/user-groups/{userGroupId}', {
+    params: { path: { userGroupId }, query: { elevate: true } as never },
+    body: input as never,
+  })
+  if (!result.response.ok || !result.data) {
+    throw new Error(`update user group: HTTP ${result.response.status}`)
+  }
+  return result.data as unknown as UserGroupSummary
+}
+
+export async function deleteUserGroup(
+  userGroupId: string,
+): Promise<UserGroupSummary> {
+  const result = await apiClient.DELETE('/user-groups/{userGroupId}', {
+    params: { path: { userGroupId }, query: { elevate: true } as never },
+  })
+  if (!result.response.ok) {
+    throw new Error(`delete user group: HTTP ${result.response.status}`)
+  }
+  return result.data as unknown as UserGroupSummary
+}
+
+// ---- Jobs (M18f) -------------------------------------------------------
+
+export type JobTask = {
+  taskId: string
+  name: string
+  description?: string | null
+  command?: string
+}
+
+export type JobRunState = 'running' | 'completed' | 'failed' | null
+
+export type JobRun = {
+  runId: string
+  jobId?: string
+  created: string
+  updated?: string | null
+  state: JobRunState
+}
+
+export type JobRunOutput = {
+  seq?: number
+  type: string
+  message: string
+  task: string
+  taskId?: string
+  ts: string
+}
+
+export type JobEvent =
+  | number
+  | null
+  | {
+      type: 'once'
+      eventId?: string
+      starts: string
+      enabled?: boolean
+    }
+  | {
+      type: 'recurring'
+      eventId?: string
+      interval: { value: string; field: 'minute' | 'hour' | 'day' | 'week' | 'month' }
+      starts?: string | null
+      ends?: string | null
+      enabled?: boolean
+    }
+
+export type Job = {
+  jobId: string
+  name: string
+  description?: string | null
+  createdBy?: { userId?: string; username?: string } | null
+  created: string
+  updatedBy?: { userId?: string; username?: string } | null
+  updated?: string | null
+  tasks: JobTask[]
+  event?: JobEvent
+  runCount?: number
+  lastRun?: JobRun | null
+}
+
+export async function fetchJobs(): Promise<Job[]> {
+  const result = await apiClient.GET('/jobs', {
+    params: { query: { elevate: true } as never },
+  })
+  if (!result.response.ok || !result.data) {
+    throw new Error(`jobs: HTTP ${result.response.status}`)
+  }
+  return result.data as unknown as Job[]
+}
+
+export async function fetchJob(jobId: string): Promise<Job> {
+  const result = await apiClient.GET('/jobs/{jobId}', {
+    params: { path: { jobId }, query: { elevate: true } as never },
+  })
+  if (!result.response.ok || !result.data) {
+    throw new Error(`job ${jobId}: HTTP ${result.response.status}`)
+  }
+  return result.data as unknown as Job
+}
+
+export async function fetchJobTasks(): Promise<JobTask[]> {
+  const result = await apiClient.GET('/jobs/tasks', {
+    params: { query: { elevate: true } as never },
+  })
+  if (!result.response.ok || !result.data) {
+    throw new Error(`job tasks: HTTP ${result.response.status}`)
+  }
+  return result.data as unknown as JobTask[]
+}
+
+export type JobCreateInput = {
+  name: string
+  description?: string | null
+  tasks: string[]
+  event?: JobEvent
+}
+
+export async function createJob(input: JobCreateInput): Promise<Job> {
+  const result = await apiClient.POST('/jobs', {
+    params: { query: { elevate: true } as never },
+    body: input as never,
+  })
+  if (!result.response.ok || !result.data) {
+    throw new Error(`create job: HTTP ${result.response.status}`)
+  }
+  return result.data as unknown as Job
+}
+
+export async function deleteJob(jobId: string): Promise<void> {
+  const result = await apiClient.DELETE('/jobs/{jobId}', {
+    params: { path: { jobId }, query: { elevate: true } as never },
+  })
+  if (!result.response.ok) {
+    throw new Error(`delete job: HTTP ${result.response.status}`)
+  }
+}
+
+export async function fetchJobRuns(jobId: string): Promise<JobRun[]> {
+  const result = await apiClient.GET('/jobs/{jobId}/runs', {
+    params: { path: { jobId }, query: { elevate: true } as never },
+  })
+  if (!result.response.ok || !result.data) {
+    throw new Error(`job runs: HTTP ${result.response.status}`)
+  }
+  return result.data as unknown as JobRun[]
+}
+
+export async function startJobRun(
+  jobId: string,
+): Promise<{ runId: string }> {
+  const result = await apiClient.POST('/jobs/{jobId}/runs', {
+    params: { path: { jobId }, query: { elevate: true } as never },
+  })
+  if (!result.response.ok || !result.data) {
+    throw new Error(`start job run: HTTP ${result.response.status}`)
+  }
+  return result.data as unknown as { runId: string }
+}
+
+export async function fetchJobRunOutput(
+  runId: string,
+  afterSeq?: number,
+): Promise<JobRunOutput[]> {
+  const query: Record<string, string> = { elevate: 'true' }
+  if (afterSeq !== undefined && afterSeq > 0) {
+    query['after-seq'] = String(afterSeq)
+  }
+  const result = await apiClient.GET('/jobs/runs/{runId}/output', {
+    params: { path: { runId }, query: query as never },
+  })
+  if (!result.response.ok || !result.data) {
+    throw new Error(`job run output: HTTP ${result.response.status}`)
+  }
+  return result.data as unknown as JobRunOutput[]
+}
+
+// ---- AppInfo / AppData tables (M18f) -----------------------------------
+
+/**
+ * Rich shape returned by `GET /op/appinfo`. The API populates the
+ * structurally-stable subset; this type captures what the SPA renders.
+ * Unknown sub-fields are tolerated via index access in the page.
+ */
+export type AppInfoDetail = {
+  version: string
+  commit?: string
+  buildDate?: string
+  date?: string
+  schema?: string
+  counts?: {
+    users?: number
+    userGroups?: number
+    collections?: number
+    assets?: number
+    stigs?: number
+    reviews?: number
+    jobs?: number
+    runs?: number
+  }
+  postgres?: {
+    version?: string
+    startTime?: string
+    uptime?: number
+    connections?: number
+    variables?: Record<string, string | number | null>
+  }
+  runtime?: {
+    goroutines?: number
+    cpus?: number
+    goVersion?: string
+    os?: string
+    arch?: string
+    uptime?: number
+    memory?: {
+      heapAlloc?: number
+      heapInuse?: number
+      stackSys?: number
+      sys?: number
+    }
+  }
+  requests?: {
+    totalRequests?: number
+    totalApiRequests?: number
+    totalRequestDuration?: number
+    totalErrors?: number
+    operationIds?: Record<
+      string,
+      {
+        totalRequests?: number
+        totalDuration?: number
+        minDuration?: number
+        maxDuration?: number
+        errors?: number
+      }
+    >
+  }
+}
+
+export async function fetchAppInfoDetail(): Promise<AppInfoDetail> {
+  const result = await apiClient.GET('/op/appinfo', {})
+  if (!result.response.ok || !result.data) {
+    throw new Error(`appinfo: HTTP ${result.response.status}`)
+  }
+  return result.data as unknown as AppInfoDetail
+}
+
+export type AppDataTable = {
+  name?: string
+  rows?: number
+  dataLength?: number
+}
+
+export async function fetchAppDataTables(): Promise<AppDataTable[]> {
+  const result = await apiClient.GET('/op/appdata/tables', {})
+  if (!result.response.ok || !result.data) {
+    throw new Error(`appdata tables: HTTP ${result.response.status}`)
+  }
+  return result.data as unknown as AppDataTable[]
+}
+
+// ---- Collection Grants (M18f) ------------------------------------------
+
+export type GrantSubject = {
+  user?: { userId?: string; username?: string; displayName?: string }
+  userGroup?: { userGroupId?: string; name?: string }
+}
+
+export type CollectionGrant = GrantSubject & {
+  grantId?: string
+  roleId: 1 | 2 | 3 | 4
+}
+
+export async function fetchCollectionGrants(
+  collectionId: string,
+): Promise<CollectionGrant[]> {
+  const query: Record<string, string> = { elevate: 'true' }
+  const result = await apiClient.GET('/collections/{collectionId}/grants', {
+    params: { path: { collectionId }, query: query as never },
+  })
+  if (!result.response.ok || !result.data) {
+    throw new Error(`grants: HTTP ${result.response.status}`)
+  }
+  return result.data as unknown as CollectionGrant[]
+}
+
+export type GrantPostInput =
+  | { userId: string; roleId: 1 | 2 | 3 | 4 }
+  | { userGroupId: string; roleId: 1 | 2 | 3 | 4 }
+
+export async function postCollectionGrants(
+  collectionId: string,
+  body: GrantPostInput[],
+): Promise<CollectionGrant[]> {
+  const query: Record<string, string> = { elevate: 'true' }
+  const result = await apiClient.POST('/collections/{collectionId}/grants', {
+    params: { path: { collectionId }, query: query as never },
+    body: body as never,
+  })
+  if (!result.response.ok || !result.data) {
+    throw new Error(`post grants: HTTP ${result.response.status}`)
+  }
+  return result.data as unknown as CollectionGrant[]
+}
+
+export async function putCollectionGrant(
+  collectionId: string,
+  grantId: string,
+  body: GrantPostInput,
+): Promise<CollectionGrant> {
+  const query: Record<string, string> = { elevate: 'true' }
+  const result = await apiClient.PUT(
+    '/collections/{collectionId}/grants/{grantId}',
+    {
+      params: { path: { collectionId, grantId }, query: query as never },
+      body: body as never,
+    },
+  )
+  if (!result.response.ok || !result.data) {
+    throw new Error(`put grant: HTTP ${result.response.status}`)
+  }
+  return result.data as unknown as CollectionGrant
+}
+
+export async function deleteCollectionGrant(
+  collectionId: string,
+  grantId: string,
+): Promise<CollectionGrant> {
+  const query: Record<string, string> = { elevate: 'true' }
+  const result = await apiClient.DELETE(
+    '/collections/{collectionId}/grants/{grantId}',
+    {
+      params: { path: { collectionId, grantId }, query: query as never },
+    },
+  )
+  if (!result.response.ok) {
+    throw new Error(`delete grant: HTTP ${result.response.status}`)
+  }
+  return result.data as unknown as CollectionGrant
+}

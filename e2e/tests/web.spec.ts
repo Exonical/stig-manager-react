@@ -261,4 +261,115 @@ test.describe('Web SPA', () => {
       /Will insert: 0/,
     )
   })
+
+  test('admin layout renders with the four tabs (M18f)', async ({ page }) => {
+    await page.goto(`${urls.web}/admin/users`)
+    await expect(page.getByTestId('admin-layout')).toBeVisible()
+    const tabs = page.getByTestId('admin-tabs')
+    await expect(tabs).toBeVisible()
+    await expect(tabs.getByTestId('admin-tab-users')).toBeVisible()
+    await expect(tabs.getByTestId('admin-tab-user-groups')).toBeVisible()
+    await expect(tabs.getByTestId('admin-tab-jobs')).toBeVisible()
+    await expect(tabs.getByTestId('admin-tab-app-info')).toBeVisible()
+  })
+
+  test('admin users page lists demo users (M18f)', async ({ page }) => {
+    await page.goto(`${urls.web}/admin/users`)
+    await expect(page.getByTestId('admin-users-page')).toBeVisible()
+    await expect(page.getByTestId('users-table')).toBeVisible()
+    await expect(page.getByTestId('new-user-button')).toBeVisible()
+    // The signed-in admin and at least one other demo user should be present.
+    await expect(
+      page.getByTestId('users-table').getByText('admin', { exact: true }),
+    ).toBeVisible({ timeout: 10_000 })
+  })
+
+  test('admin user-groups page renders empty state when none exist (M18f)', async ({
+    page,
+  }) => {
+    await page.goto(`${urls.web}/admin/user-groups`)
+    await expect(page.getByTestId('admin-user-groups-page')).toBeVisible()
+    await expect(page.getByTestId('user-groups-table')).toBeVisible()
+    await expect(page.getByTestId('new-user-group-button')).toBeVisible()
+  })
+
+  test('admin jobs page shows task registry (M18f)', async ({ page }) => {
+    await page.goto(`${urls.web}/admin/jobs`)
+    await expect(page.getByTestId('admin-jobs-page')).toBeVisible()
+    await expect(page.getByTestId('jobs-table')).toBeVisible()
+    await expect(page.getByTestId('job-tasks-list')).toBeVisible({
+      timeout: 10_000,
+    })
+    // The built-in 'noop' task should be in the registry.
+    await expect(
+      page.getByTestId('job-tasks-list').getByText('noop'),
+    ).toBeVisible({ timeout: 10_000 })
+  })
+
+  test('admin can create + run + delete a job (M18f)', async ({ page }) => {
+    await page.goto(`${urls.web}/admin/jobs`)
+    await expect(page.getByTestId('admin-jobs-page')).toBeVisible()
+    await expect(page.getByTestId('job-tasks-list').getByText('noop')).toBeVisible({
+      timeout: 10_000,
+    })
+
+    // Open the create dialog.
+    await page.getByTestId('new-job-button').click()
+    const dialog = page.getByTestId('job-create-dialog')
+    await expect(dialog).toBeVisible()
+    const jobName = `e2e-job-${Date.now()}`
+    await dialog.getByTestId('job-name-input').fill(jobName)
+    // 'noop' is the default selected task in the dropdown.
+    await dialog.getByTestId('job-create-submit').click()
+    await expect(dialog).not.toBeVisible({ timeout: 10_000 })
+
+    // Find the new row and click Run.
+    const row = page
+      .getByTestId('jobs-table')
+      .getByRole('row')
+      .filter({ hasText: jobName })
+    await expect(row).toBeVisible({ timeout: 10_000 })
+    await row.getByRole('button', { name: new RegExp(`run ${jobName}`, 'i') }).click()
+
+    // Run history populates and the output card lands.
+    await expect(page.getByTestId('job-runs-list')).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByTestId('job-run-output')).toBeVisible({
+      timeout: 10_000,
+    })
+  })
+
+  test('admin app-info page shows build + counts cards (M18f)', async ({
+    page,
+  }) => {
+    await page.goto(`${urls.web}/admin/app-info`)
+    await expect(page.getByTestId('admin-app-info-page')).toBeVisible()
+    await expect(page.getByTestId('appinfo-build')).toBeVisible({
+      timeout: 10_000,
+    })
+    await expect(page.getByTestId('appinfo-counts')).toBeVisible()
+    await expect(page.getByTestId('appinfo-runtime')).toBeVisible()
+    await expect(page.getByTestId('appinfo-postgres')).toBeVisible()
+    await expect(page.getByTestId('appinfo-tables')).toBeVisible()
+  })
+
+  test('collection grants tab lists owner grant (M18f)', async ({ page }) => {
+    // Create a collection so we have a fresh Owner grant on it.
+    await page.goto(`${urls.web}/collections`)
+    const collectionName = `e2e-grants-${Date.now()}`
+    await page.getByTestId('new-collection-button').click()
+    const cdialog = page.getByTestId('new-collection-dialog')
+    await cdialog.getByTestId('new-collection-name-input').fill(collectionName)
+    await cdialog.getByTestId('new-collection-submit').click()
+    await expect(page).toHaveURL(/\/collections\/\d+$/, { timeout: 10_000 })
+
+    await page.getByTestId('collection-tab-grants').click()
+    await expect(page.getByTestId('collection-grants-tab')).toBeVisible()
+    await expect(page.getByTestId('grants-table')).toBeVisible()
+    // Add-grant form should be present (admin has Manage+ on its own collection).
+    await expect(page.getByTestId('add-grant-form')).toBeVisible()
+    // The creator gets an Owner grant on creation.
+    await expect(
+      page.getByTestId('grants-table').getByText('Owner'),
+    ).toBeVisible({ timeout: 10_000 })
+  })
 })

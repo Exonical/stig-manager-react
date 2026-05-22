@@ -9,6 +9,7 @@ import { Link, useParams } from 'react-router-dom'
 
 import { AssetsTab } from '../assets/assets-tab'
 import { ExportsTab } from './exports-tab'
+import { GrantsTab } from './grants-tab'
 import { HistoryTab } from './history-tab'
 import { MetricsTab } from './metrics-tab'
 import { PoamTab } from './poam-tab'
@@ -215,6 +216,12 @@ export function CollectionDetailPage() {
           </TabsContent>
         )}
 
+        {visibleTabs.some((t) => t.value === 'grants') && (
+          <TabsContent value="grants">
+            <GrantsTab collectionId={c.collectionId} role={role} />
+          </TabsContent>
+        )}
+
         {visibleTabs
           .filter(
             (t) =>
@@ -224,7 +231,8 @@ export function CollectionDetailPage() {
               t.value !== 'metrics' &&
               t.value !== 'history' &&
               t.value !== 'exports' &&
-              t.value !== 'poam',
+              t.value !== 'poam' &&
+              t.value !== 'grants',
           )
           .map((tab) => (
             <TabsContent key={tab.value} value={tab.value}>

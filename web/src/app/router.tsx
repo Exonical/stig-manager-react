@@ -3,6 +3,11 @@ import { createBrowserRouter, Navigate } from 'react-router-dom'
 import { RequireAuth } from './auth/require-auth'
 import { RequireScope } from './auth/require-scope'
 import { AppLayout } from './layout/app-layout'
+import { AdminLayout } from './pages/admin/admin-layout'
+import { AppInfoPage } from './pages/admin/app-info-page'
+import { JobsPage } from './pages/admin/jobs-page'
+import { UserGroupsPage } from './pages/admin/user-groups-page'
+import { UsersPage } from './pages/admin/users-page'
 import { AssetDetailPage } from './pages/assets/detail'
 import { ReviewEditorPage } from './pages/assets/review-editor'
 import { CollectionDetailPage } from './pages/collections/detail'
@@ -71,19 +76,8 @@ export const router = createBrowserRouter([
         ),
       },
       {
-        path: 'jobs',
-        element: (
-          <RequireScope scope="stig-manager:op:read">
-            <Placeholder
-              title="Jobs"
-              blurb="Background tasks, schedules, and run history."
-              milestone="18f"
-            />
-          </RequireScope>
-        ),
-      },
-      {
         path: 'admin',
+        element: <AdminLayout />,
         children: [
           { index: true, element: <Navigate to="users" replace /> },
           {
@@ -92,11 +86,25 @@ export const router = createBrowserRouter([
               <RequireScope
                 scope={['stig-manager:user:read', 'stig-manager:user']}
               >
-                <Placeholder
-                  title="Users"
-                  blurb="Manage users, user groups, and collection grants."
-                  milestone="18f"
-                />
+                <UsersPage />
+              </RequireScope>
+            ),
+          },
+          {
+            path: 'user-groups',
+            element: (
+              <RequireScope
+                scope={['stig-manager:user:read', 'stig-manager:user']}
+              >
+                <UserGroupsPage />
+              </RequireScope>
+            ),
+          },
+          {
+            path: 'jobs',
+            element: (
+              <RequireScope scope="stig-manager:op:read">
+                <JobsPage />
               </RequireScope>
             ),
           },
@@ -104,11 +112,7 @@ export const router = createBrowserRouter([
             path: 'app-info',
             element: (
               <RequireScope scope="stig-manager:op:read">
-                <Placeholder
-                  title="App info"
-                  blurb="Build metadata, request counters, and runtime state."
-                  milestone="18f"
-                />
+                <AppInfoPage />
               </RequireScope>
             ),
           },

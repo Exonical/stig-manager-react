@@ -14,16 +14,31 @@ import { apiClient } from './client'
 import {
   createAsset,
   createCollection,
+  createJob,
+  createUser,
+  createUserGroup,
   deleteAsset,
+  deleteCollectionGrant,
+  deleteJob,
   deleteReviewHistory,
+  deleteUser,
+  deleteUserGroup,
+  fetchAppDataTables,
   fetchAppInfo,
+  fetchAppInfoDetail,
   fetchAsset,
   fetchAssets,
   fetchAssetStigs,
   fetchCollection,
+  fetchCollectionGrants,
   fetchCollections,
   fetchCollectionStigs,
   fetchCurrentUser,
+  fetchJob,
+  fetchJobRunOutput,
+  fetchJobRuns,
+  fetchJobTasks,
+  fetchJobs,
   fetchMetricsSummaryByAsset,
   fetchMetricsSummaryByStig,
   fetchMetricsSummaryCollection,
@@ -32,19 +47,37 @@ import {
   fetchReviewHistoryStats,
   fetchReviewsByAsset,
   fetchRulesByRevision,
+  fetchUser,
+  fetchUserGroup,
+  fetchUserGroups,
+  fetchUsers,
+  postCollectionGrants,
   postReviewBatch,
+  putCollectionGrant,
   putReviewByAssetRule,
+  startJobRun,
   updateAsset,
+  updateUser,
+  updateUserGroup,
+  type AppDataTable,
   type AppInfo,
+  type AppInfoDetail,
   type Asset,
   type AssetForm,
   type AssetStig,
   type AssetUpdateInput,
+  type CollectionGrant,
   type CollectionStig,
   type CollectionSummary,
   type CreateCollectionInput,
   type CurrentUser,
   type DeleteReviewHistoryInput,
+  type GrantPostInput,
+  type Job,
+  type JobCreateInput,
+  type JobRun,
+  type JobRunOutput,
+  type JobTask,
   type MetricsSummaryAggAsset,
   type MetricsSummaryAggCollection,
   type MetricsSummaryAggStig,
@@ -59,17 +92,33 @@ import {
   type ReviewResult,
   type ReviewStatusLabel,
   type Rule,
+  type UserCreateInput,
+  type UserGroupCreateInput,
+  type UserGroupPatchInput,
+  type UserGroupSummary,
+  type UserPatchInput,
+  type UserSummary,
+  type UsersFilter,
 } from './index'
 
 // Re-export commonly-used types for consumers that already import
 // from this module.
 export type {
+  AppDataTable,
+  AppInfoDetail,
   Asset,
   AssetForm,
   AssetStig,
   AssetUpdateInput,
+  CollectionGrant,
   CollectionStig,
   DeleteReviewHistoryInput,
+  GrantPostInput,
+  Job,
+  JobCreateInput,
+  JobRun,
+  JobRunOutput,
+  JobTask,
   MetricsSummaryAggAsset,
   MetricsSummaryAggCollection,
   MetricsSummaryAggStig,
@@ -84,6 +133,13 @@ export type {
   ReviewResult,
   ReviewStatusLabel,
   Rule,
+  UserCreateInput,
+  UserGroupCreateInput,
+  UserGroupPatchInput,
+  UserGroupSummary,
+  UserPatchInput,
+  UserSummary,
+  UsersFilter,
 }
 
 export const QUERY_KEYS = {
@@ -115,6 +171,18 @@ export const QUERY_KEYS = {
     params?: { projection?: 'asset' } & ReviewHistoryFilters,
   ) =>
     ['collection', cid, 'review-history-stats', params ?? {}] as const,
+  users: (filter?: UsersFilter) => ['users', filter ?? {}] as const,
+  userAdmin: (id: string) => ['user', 'admin', id] as const,
+  userGroups: ['user-groups'] as const,
+  userGroup: (id: string) => ['user-group', id] as const,
+  jobs: ['jobs'] as const,
+  job: (id: string) => ['job', id] as const,
+  jobTasks: ['jobs', 'tasks'] as const,
+  jobRuns: (jobId: string) => ['job', jobId, 'runs'] as const,
+  jobRunOutput: (runId: string) => ['job', 'run', runId, 'output'] as const,
+  appInfoDetail: ['op', 'appinfo', 'detail'] as const,
+  appDataTables: ['op', 'appdata', 'tables'] as const,
+  collectionGrants: (cid: string) => ['collection', cid, 'grants'] as const,
 } as const
 
 export function useAppInfo(): UseQueryResult<AppInfo> {
@@ -473,6 +541,295 @@ export function useDeleteReviewHistory(): UseMutationResult<
       void qc.invalidateQueries({
         queryKey: ['collection', collectionId, 'review-history-stats'],
       })
+    },
+  })
+}
+
+// ---- Users / User Groups (M18f) ----------------------------------------
+
+export function useUsers(
+  filter?: UsersFilter,
+): UseQueryResult<UserSummary[]> {
+  return useQuery({
+    queryKey: QUERY_KEYS.users(filter),
+    queryFn: () => fetchUsers(filter),
+  })
+}
+
+export function useUser(
+  userId: string | undefined,
+): UseQueryResult<UserSummary> {
+  return useQuery({
+    queryKey: userId ? QUERY_KEYS.userAdmin(userId) : ['user', 'noop'],
+    queryFn: () => fetchUser(userId as string),
+    enabled: Boolean(userId),
+  })
+}
+
+export function useCreateUser(): UseMutationResult<
+  UserSummary,
+  Error,
+  UserCreateInput
+> {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: createUser,
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['users'] })
+    },
+  })
+}
+
+export function useUpdateUser(): UseMutationResult<
+  UserSummary,
+  Error,
+  { userId: string; input: UserPatchInput }
+> {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ userId, input }) => updateUser(userId, input),
+    onSuccess: (_data, { userId }) => {
+      void qc.invalidateQueries({ queryKey: ['users'] })
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.userAdmin(userId) })
+    },
+  })
+}
+
+export function useDeleteUser(): UseMutationResult<UserSummary, Error, string> {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (userId) => deleteUser(userId),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['users'] })
+    },
+  })
+}
+
+export function useUserGroups(): UseQueryResult<UserGroupSummary[]> {
+  return useQuery({
+    queryKey: QUERY_KEYS.userGroups,
+    queryFn: fetchUserGroups,
+  })
+}
+
+export function useUserGroup(
+  userGroupId: string | undefined,
+): UseQueryResult<UserGroupSummary> {
+  return useQuery({
+    queryKey: userGroupId
+      ? QUERY_KEYS.userGroup(userGroupId)
+      : ['user-group', 'noop'],
+    queryFn: () => fetchUserGroup(userGroupId as string),
+    enabled: Boolean(userGroupId),
+  })
+}
+
+export function useCreateUserGroup(): UseMutationResult<
+  UserGroupSummary,
+  Error,
+  UserGroupCreateInput
+> {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: createUserGroup,
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.userGroups })
+    },
+  })
+}
+
+export function useUpdateUserGroup(): UseMutationResult<
+  UserGroupSummary,
+  Error,
+  { userGroupId: string; input: UserGroupPatchInput }
+> {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ userGroupId, input }) => updateUserGroup(userGroupId, input),
+    onSuccess: (_data, { userGroupId }) => {
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.userGroups })
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.userGroup(userGroupId) })
+    },
+  })
+}
+
+export function useDeleteUserGroup(): UseMutationResult<
+  UserGroupSummary,
+  Error,
+  string
+> {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (userGroupId) => deleteUserGroup(userGroupId),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.userGroups })
+    },
+  })
+}
+
+// ---- Jobs (M18f) -------------------------------------------------------
+
+export function useJobs(): UseQueryResult<Job[]> {
+  return useQuery({
+    queryKey: QUERY_KEYS.jobs,
+    queryFn: fetchJobs,
+  })
+}
+
+export function useJob(jobId: string | undefined): UseQueryResult<Job> {
+  return useQuery({
+    queryKey: jobId ? QUERY_KEYS.job(jobId) : ['job', 'noop'],
+    queryFn: () => fetchJob(jobId as string),
+    enabled: Boolean(jobId),
+  })
+}
+
+export function useJobTasks(): UseQueryResult<JobTask[]> {
+  return useQuery({
+    queryKey: QUERY_KEYS.jobTasks,
+    queryFn: fetchJobTasks,
+    staleTime: 60_000,
+  })
+}
+
+export function useJobRuns(
+  jobId: string | undefined,
+): UseQueryResult<JobRun[]> {
+  return useQuery({
+    queryKey: jobId ? QUERY_KEYS.jobRuns(jobId) : ['job', 'noop', 'runs'],
+    queryFn: () => fetchJobRuns(jobId as string),
+    enabled: Boolean(jobId),
+  })
+}
+
+export function useJobRunOutput(
+  runId: string | undefined,
+  options?: { refetchIntervalMs?: number },
+): UseQueryResult<JobRunOutput[]> {
+  return useQuery({
+    queryKey: runId ? QUERY_KEYS.jobRunOutput(runId) : ['job', 'noop', 'run', 'output'],
+    queryFn: () => fetchJobRunOutput(runId as string),
+    enabled: Boolean(runId),
+    refetchInterval: options?.refetchIntervalMs ?? 2_000,
+  })
+}
+
+export function useCreateJob(): UseMutationResult<Job, Error, JobCreateInput> {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: createJob,
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.jobs })
+    },
+  })
+}
+
+export function useDeleteJob(): UseMutationResult<void, Error, string> {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (jobId) => deleteJob(jobId),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.jobs })
+    },
+  })
+}
+
+export function useStartJobRun(): UseMutationResult<
+  { runId: string },
+  Error,
+  string
+> {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (jobId) => startJobRun(jobId),
+    onSuccess: (_data, jobId) => {
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.jobs })
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.jobRuns(jobId) })
+    },
+  })
+}
+
+// ---- AppInfo / AppData tables (M18f) -----------------------------------
+
+export function useAppInfoDetail(): UseQueryResult<AppInfoDetail> {
+  return useQuery({
+    queryKey: QUERY_KEYS.appInfoDetail,
+    queryFn: fetchAppInfoDetail,
+    refetchInterval: 15_000,
+  })
+}
+
+export function useAppDataTables(): UseQueryResult<AppDataTable[]> {
+  return useQuery({
+    queryKey: QUERY_KEYS.appDataTables,
+    queryFn: fetchAppDataTables,
+  })
+}
+
+// ---- Collection Grants (M18f) ------------------------------------------
+
+export function useCollectionGrants(
+  collectionId: string | undefined,
+): UseQueryResult<CollectionGrant[]> {
+  return useQuery({
+    queryKey: collectionId
+      ? QUERY_KEYS.collectionGrants(collectionId)
+      : ['collection', 'noop', 'grants'],
+    queryFn: () => fetchCollectionGrants(collectionId as string),
+    enabled: Boolean(collectionId),
+  })
+}
+
+export function usePostCollectionGrants(): UseMutationResult<
+  CollectionGrant[],
+  Error,
+  { collectionId: string; body: GrantPostInput[] }
+> {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ collectionId, body }) =>
+      postCollectionGrants(collectionId, body),
+    onSuccess: (_data, { collectionId }) => {
+      void qc.invalidateQueries({
+        queryKey: QUERY_KEYS.collectionGrants(collectionId),
+      })
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.user })
+    },
+  })
+}
+
+export function usePutCollectionGrant(): UseMutationResult<
+  CollectionGrant,
+  Error,
+  { collectionId: string; grantId: string; body: GrantPostInput }
+> {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ collectionId, grantId, body }) =>
+      putCollectionGrant(collectionId, grantId, body),
+    onSuccess: (_data, { collectionId }) => {
+      void qc.invalidateQueries({
+        queryKey: QUERY_KEYS.collectionGrants(collectionId),
+      })
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.user })
+    },
+  })
+}
+
+export function useDeleteCollectionGrant(): UseMutationResult<
+  CollectionGrant,
+  Error,
+  { collectionId: string; grantId: string }
+> {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ collectionId, grantId }) =>
+      deleteCollectionGrant(collectionId, grantId),
+    onSuccess: (_data, { collectionId }) => {
+      void qc.invalidateQueries({
+        queryKey: QUERY_KEYS.collectionGrants(collectionId),
+      })
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.user })
     },
   })
 }
