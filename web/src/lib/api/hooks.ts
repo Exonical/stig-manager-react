@@ -125,6 +125,11 @@ export function useCreateCollection(): UseMutationResult<
       // Any cached list view (with or without a name filter) is stale
       // after the create; QUERY_KEYS.collections is the prefix.
       void qc.invalidateQueries({ queryKey: QUERY_KEYS.collections })
+      // The caller is automatically granted Owner on the new
+      // collection, so /user (which carries collectionGrants) is stale.
+      // Without this, the detail page renders with role=null and hides
+      // the tabs that the new owner is supposed to see.
+      void qc.invalidateQueries({ queryKey: QUERY_KEYS.user })
     },
   })
 }

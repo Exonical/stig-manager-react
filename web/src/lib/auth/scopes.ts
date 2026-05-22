@@ -27,11 +27,33 @@ function stripPrefix(scope: string, prefix: string | undefined): string {
 
 /**
  * Returns the set of canonical scope names the signed-in user has.
+ *
+ * OAuth/OIDC carries the granted scopes in three different places and
+ * Keycloak's defaults put them in only one of them, so we check all
+ * three in order of decreasing canonicalness:
+ *
+ *  1. `User.scope` — the literal `scope` field from the token
+ *     response, exposed by oidc-client-ts. This is the canonical
+ *     source per RFC 6749 §5.1.
+ *  2. The access token's `scope` claim — Keycloak puts the granted
+ *     scopes here even when the ID token doesn't carry them.
+ *  3. The ID token's `scope` claim — falls back here when an
+ *     authorization server happens to also project scope into the
+ *     ID token (some do; Keycloak does not by default).
  */
 export function userScopes(user: User | null | undefined): Set<string> {
   if (!user) return new Set()
-  const raw = (user.profile as Record<string, unknown>)['scope']
-  if (typeof raw !== 'string') return new Set()
+  let raw: string | undefined
+  if (typeof user.scope === 'string' && user.scope.length > 0) {
+    raw = user.scope
+  } else if (typeof user.access_token === 'string') {
+    raw = scopeFromAccessToken(user.access_token)
+  }
+  if (!raw) {
+    const profile = (user.profile as Record<string, unknown>)['scope']
+    if (typeof profile === 'string') raw = profile
+  }
+  if (!raw) return new Set()
   let prefix: string | undefined
   try {
     prefix = readEnv().oauth.scopePrefix
@@ -40,6 +62,25 @@ export function userScopes(user: User | null | undefined): Set<string> {
   }
   const parts = raw.split(/\s+/).filter(Boolean)
   return new Set(parts.map((s) => stripPrefix(s, prefix)))
+}
+
+/**
+ * Best-effort decode of the OAuth `scope` claim out of a JWT access
+ * token. Returns undefined for opaque tokens or anything else that
+ * isn't a well-formed JWS.
+ */
+function scopeFromAccessToken(token: string): string | undefined {
+  const parts = token.split('.')
+  if (parts.length < 2) return undefined
+  try {
+    let payload = parts[1].replace(/-/g, '+').replace(/_/g, '/')
+    while (payload.length % 4 !== 0) payload += '='
+    const decoded = JSON.parse(atob(payload)) as Record<string, unknown>
+    const scope = decoded['scope']
+    return typeof scope === 'string' ? scope : undefined
+  } catch {
+    return undefined
+  }
 }
 
 /**
