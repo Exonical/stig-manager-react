@@ -68,6 +68,32 @@ test.describe('API — anonymous surface', () => {
     const res = await request.get(`${urls.api}/api/collections`)
     expect([401, 403]).toContain(res.status())
   })
+
+  test('GET /api/user without a token is rejected', async ({ request }) => {
+    const res = await request.get(`${urls.api}/api/user`)
+    expect([401, 403]).toContain(res.status())
+  })
+})
+
+test.describe('API — self-info', () => {
+  test('GET /api/user returns the signed-in app_user row', async ({
+    page,
+    request,
+  }) => {
+    await page.goto(urls.web)
+    const token = await readAccessToken(page)
+    const res = await withAuth(request, token, 'get', '/api/user')
+    expect(res.status(), await res.text()).toBe(200)
+    const body = (await res.json()) as {
+      userId: string
+      username: string
+      privileges?: { admin?: boolean }
+    }
+    expect(body.userId).toBeTruthy()
+    // The admin realm user logs in as `admin` and is auto-upserted
+    // on first /api/user hit.
+    expect(body.username).toBe('admin')
+  })
 })
 
 test.describe('API — authenticated golden path', () => {

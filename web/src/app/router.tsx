@@ -3,6 +3,8 @@ import { createBrowserRouter, Navigate } from 'react-router-dom'
 import { RequireAuth } from './auth/require-auth'
 import { RequireScope } from './auth/require-scope'
 import { AppLayout } from './layout/app-layout'
+import { CollectionDetailPage } from './pages/collections/detail'
+import { CollectionsListPage } from './pages/collections/list'
 import { DashboardPage } from './pages/dashboard'
 import { NotFoundPage } from './pages/not-found'
 import { Placeholder } from './pages/placeholder'
@@ -26,11 +28,15 @@ export const router = createBrowserRouter([
         path: 'collections',
         element: (
           <RequireScope scope="stig-manager:collection:read">
-            <Placeholder
-              title="Collections"
-              blurb="Browse and manage STIG collections, assets, and reviews."
-              milestone="18b"
-            />
+            <CollectionsListPage />
+          </RequireScope>
+        ),
+      },
+      {
+        path: 'collections/:collectionId',
+        element: (
+          <RequireScope scope="stig-manager:collection:read">
+            <CollectionDetailPage />
           </RequireScope>
         ),
       },

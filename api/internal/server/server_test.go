@@ -225,10 +225,11 @@ func TestAppInfo_RequiresScope(t *testing.T) {
 
 // TestUnimplementedReturns501 confirms that operations we have not yet
 // overridden still fall through to the api.Unimplemented 501 stub.
-// /user has only optional query parameters, so it bypasses the
-// generated 400 validation layer and exercises Unimplemented directly.
-// A valid bearer token is required because the auth middleware gates
-// every /api/* operation that declares a security requirement.
+// PatchUserWebPreferences has no parameters and no implementation
+// yet — exercise that to verify the Unimplemented path keeps working
+// as new operations are wired up. A valid bearer token is required
+// because the auth middleware gates every /api/* operation that
+// declares a security requirement.
 func TestUnimplementedReturns501(t *testing.T) {
 	t.Parallel()
 	fx := newOIDCFixture(t)
@@ -241,7 +242,7 @@ func TestUnimplementedReturns501(t *testing.T) {
 	handler := newTestServer(t, withAuth(prov))
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/user", nil)
+	req := httptest.NewRequest(http.MethodPatch, "/api/user/web-preferences", nil)
 	req.Header.Set("Authorization", "Bearer "+fx.token(t, "stig-manager:user:read"))
 	handler.ServeHTTP(rec, req)
 	if got := rec.Result().StatusCode; got != http.StatusNotImplemented {

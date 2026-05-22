@@ -179,6 +179,44 @@ func TestUsersAuth(t *testing.T) {
 	}
 }
 
+// TestGetUserSelf covers GET /user: signed-in users see their own
+// app_user row regardless of which user scope they hold, and the
+// endpoint auto-upserts the row on first call.
+func TestGetUserSelf(t *testing.T) {
+	pool := newIntegrationPool(t)
+	handler, fx := usersServer(t, pool)
+
+	// 401 without a token.
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/user", nil)
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("no-token: got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	// A token with NO user scope still works — /user is self-info.
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/api/user", nil)
+	req.Header.Set("Authorization", "Bearer "+fx.tokenForSub(t, "self-sub-1", "stig-manager:collection:read"))
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("self: got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		UserId   string `json:"userId"`
+		Username string `json:"username"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v body=%s", err, rec.Body.String())
+	}
+	if resp.UserId == "" {
+		t.Fatalf("expected userId, got %q", resp.UserId)
+	}
+	if resp.Username != "user-self-sub-1" {
+		t.Fatalf("expected username=user-self-sub-1, got %q", resp.Username)
+	}
+}
+
 // TestUserGroupsAdminCRUD walks the full POST/GET/PATCH/DELETE surface
 // for /user-groups and verifies group-scoped collection grants survive
 // the migration cleanly.
