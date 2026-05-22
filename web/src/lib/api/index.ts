@@ -5,6 +5,7 @@
 export { apiClient } from './client'
 export type { paths, components, operations } from './client'
 
+import { getAccessTokenForClient } from '../auth/access-token'
 import { apiClient } from './client'
 
 /**
@@ -484,4 +485,403 @@ export async function postReviewBatch(
   return result.data as unknown as
     | ReviewBatchResponse
     | ReviewBatchResponseDryRun
+}
+
+// ---- Metrics (M18e) -----------------------------------------------------
+//
+// The metrics-summary surface is a family of GET endpoints under
+// /collections/{cid}/metrics/summary[/{aggregate}]. Each returns a
+// MetricsSummaryAgg* shape from docs/openapi/stig-manager.yaml.
+// `MetricsSummary` itself (the inner `metrics` object) is identical
+// across aggregates — the outer envelope carries the aggregation
+// dimension (collection-level totals, per-asset, per-stig, per-label).
+
+/** Counters keyed by severity (low/medium/high). */
+export type MetricsBySeverity = { high: number; low: number; medium: number }
+
+/** Counters keyed by review status. */
+export type MetricsStatusCounts = {
+  saved: number
+  submitted: number
+  accepted: number
+  rejected: number
+}
+
+/** Counters keyed by review result for the summary aggregates. */
+export type MetricsResultCounts = {
+  fail: number
+  notapplicable: number
+  other: number
+  pass: number
+}
+
+/** Common per-aggregate metrics block returned by all summary endpoints. */
+export type MetricsSummary = {
+  metrics: {
+    assessed: number
+    assessedBySeverity: MetricsBySeverity
+    assessments: number
+    assessmentsBySeverity: MetricsBySeverity
+    findings: MetricsBySeverity
+    maxTouchTs?: string | null
+    maxTs?: string | null
+    minTs?: string | null
+    results: MetricsResultCounts
+    statuses: MetricsStatusCounts
+  }
+}
+
+/** Aggregated metrics for the entire Collection. */
+export type MetricsSummaryAggCollection = MetricsSummary & {
+  collectionId: string
+  name: string
+  assets: number
+  checklists: number
+  stigs: number
+}
+
+/** Per-asset metrics row. */
+export type MetricsSummaryAggAsset = MetricsSummary & {
+  assetId: string
+  name: string
+  benchmarkIds: string[]
+  labels?: Array<{ labelId?: string; name?: string; color?: string | null }>
+}
+
+/** Per-STIG metrics row. */
+export type MetricsSummaryAggStig = MetricsSummary & {
+  benchmarkId: string
+  title?: string
+  assets: number
+  collections?: number
+  ruleCount?: number
+  revisionStr?: string
+  revisionDate?: string | null
+}
+
+/** Per-label metrics row. */
+export type MetricsSummaryAggLabel = MetricsSummary & {
+  labelId: string | null
+  name: string | null
+  assets: number
+}
+
+export async function fetchMetricsSummaryCollection(
+  collectionId: string,
+): Promise<MetricsSummaryAggCollection> {
+  const result = await apiClient.GET(
+    '/collections/{collectionId}/metrics/summary/collection',
+    { params: { path: { collectionId } } },
+  )
+  if (!result.response.ok || !result.data) {
+    throw new Error(`metrics: HTTP ${result.response.status}`)
+  }
+  return result.data as unknown as MetricsSummaryAggCollection
+}
+
+export async function fetchMetricsSummaryByAsset(
+  collectionId: string,
+): Promise<MetricsSummaryAggAsset[]> {
+  const result = await apiClient.GET(
+    '/collections/{collectionId}/metrics/summary/asset',
+    { params: { path: { collectionId } } },
+  )
+  if (!result.response.ok || !result.data) {
+    throw new Error(`metrics by asset: HTTP ${result.response.status}`)
+  }
+  return result.data as unknown as MetricsSummaryAggAsset[]
+}
+
+export async function fetchMetricsSummaryByStig(
+  collectionId: string,
+): Promise<MetricsSummaryAggStig[]> {
+  const result = await apiClient.GET(
+    '/collections/{collectionId}/metrics/summary/stig',
+    { params: { path: { collectionId } } },
+  )
+  if (!result.response.ok || !result.data) {
+    throw new Error(`metrics by stig: HTTP ${result.response.status}`)
+  }
+  return result.data as unknown as MetricsSummaryAggStig[]
+}
+
+// ---- Review History (M18e) ----------------------------------------------
+
+export type ReviewHistoryEntry = {
+  ts: string
+  touchTs?: string
+  result: ReviewResult
+  detail?: string
+  comment?: string
+  ruleId?: string
+  status?: { label?: ReviewStatusLabel; text?: string | null }
+  userId?: string
+  username?: string
+  autoResult?: boolean
+}
+
+export type ReviewHistoryRule = {
+  ruleId: string
+  history: ReviewHistoryEntry[]
+}
+
+export type ReviewHistoryAsset = {
+  assetId: string
+  reviewHistories: ReviewHistoryRule[]
+}
+
+export type ReviewHistoryStats = {
+  collectionHistoryEntryCount: number
+  oldestHistoryEntryDate: string
+  assetHistoryEntryCounts?: Array<{
+    assetId: string
+    historyEntryCount?: number
+    oldestHistoryEntry?: string | null
+  }>
+}
+
+export type ReviewHistoryFilters = {
+  assetId?: string
+  ruleId?: string
+  status?: ReviewStatusLabel
+  startDate?: string
+  endDate?: string
+}
+
+export async function fetchReviewHistory(
+  collectionId: string,
+  filters?: ReviewHistoryFilters,
+): Promise<ReviewHistoryAsset[]> {
+  const query: Record<string, string> = {}
+  if (filters?.assetId) query['assetId'] = filters.assetId
+  if (filters?.ruleId) query['ruleId'] = filters.ruleId
+  if (filters?.status) query['status'] = filters.status
+  if (filters?.startDate) query['startDate'] = filters.startDate
+  if (filters?.endDate) query['endDate'] = filters.endDate
+  const result = await apiClient.GET(
+    '/collections/{collectionId}/review-history',
+    { params: { path: { collectionId }, query: query as never } },
+  )
+  if (!result.response.ok || !result.data) {
+    throw new Error(`review history: HTTP ${result.response.status}`)
+  }
+  return result.data as unknown as ReviewHistoryAsset[]
+}
+
+export async function fetchReviewHistoryStats(
+  collectionId: string,
+  params?: { projection?: 'asset' } & ReviewHistoryFilters,
+): Promise<ReviewHistoryStats> {
+  const query: Record<string, string> = {}
+  if (params?.projection) query['projection'] = params.projection
+  if (params?.assetId) query['assetId'] = params.assetId
+  if (params?.ruleId) query['ruleId'] = params.ruleId
+  if (params?.status) query['status'] = params.status
+  if (params?.startDate) query['startDate'] = params.startDate
+  if (params?.endDate) query['endDate'] = params.endDate
+  const result = await apiClient.GET(
+    '/collections/{collectionId}/review-history/stats',
+    { params: { path: { collectionId }, query: query as never } },
+  )
+  if (!result.response.ok || !result.data) {
+    throw new Error(`review history stats: HTTP ${result.response.status}`)
+  }
+  return result.data as unknown as ReviewHistoryStats
+}
+
+export type DeleteReviewHistoryInput = {
+  retentionDate?: string
+  assetId?: string
+}
+
+export async function deleteReviewHistory(
+  collectionId: string,
+  input: DeleteReviewHistoryInput,
+): Promise<{ HistoryEntriesDeleted: number }> {
+  const query: Record<string, string> = {}
+  if (input.retentionDate) query['retentionDate'] = input.retentionDate
+  if (input.assetId) query['assetId'] = input.assetId
+  const result = await apiClient.DELETE(
+    '/collections/{collectionId}/review-history',
+    { params: { path: { collectionId }, query: query as never } },
+  )
+  if (!result.response.ok || !result.data) {
+    throw new Error(`delete review history: HTTP ${result.response.status}`)
+  }
+  return result.data as unknown as { HistoryEntriesDeleted: number }
+}
+
+// ---- Exports (M18e) -----------------------------------------------------
+//
+// Archive + POAM endpoints return raw binary streams (application/zip
+// or .xlsx). openapi-fetch is configured for JSON, so we drop down to
+// plain fetch() with the bearer token and trigger a browser download
+// from the resulting Blob. Errors are surfaced as JSON if the server
+// produced an envelope; otherwise we surface the status text.
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '/api'
+
+async function fetchBlob(
+  method: 'GET' | 'POST',
+  path: string,
+  init: { body?: unknown; query?: Record<string, string> } = {},
+): Promise<{ blob: Blob; filename: string }> {
+  const url = new URL(`${API_BASE}${path}`, window.location.origin)
+  for (const [k, v] of Object.entries(init.query ?? {})) {
+    if (v !== '' && v !== undefined && v !== null) url.searchParams.set(k, v)
+  }
+  const headers: Record<string, string> = {}
+  const token = getAccessTokenForClient()
+  if (token) headers['Authorization'] = `Bearer ${token}`
+  let body: BodyInit | undefined
+  if (init.body !== undefined) {
+    headers['Content-Type'] = 'application/json'
+    body = JSON.stringify(init.body)
+  }
+  const resp = await fetch(url.toString(), {
+    method,
+    headers,
+    body,
+    credentials: 'include',
+  })
+  if (!resp.ok) {
+    let detail = ''
+    try {
+      detail = (await resp.text()).slice(0, 256)
+    } catch {
+      // ignore body-read failure; we still have status
+    }
+    throw new Error(
+      `${method} ${path}: HTTP ${resp.status}${detail ? ` — ${detail}` : ''}`,
+    )
+  }
+  const filename = extractFilename(resp.headers.get('Content-Disposition'))
+  const blob = await resp.blob()
+  return { blob, filename }
+}
+
+function extractFilename(disposition: string | null): string {
+  if (!disposition) return 'download'
+  // RFC 6266 — prefer filename* (UTF-8 encoded) when present.
+  const star = /filename\*=UTF-8''([^;]+)/i.exec(disposition)
+  if (star && star[1]) {
+    try {
+      return decodeURIComponent(star[1])
+    } catch {
+      return star[1]
+    }
+  }
+  const plain = /filename="?([^";]+)"?/i.exec(disposition)
+  if (plain && plain[1]) return plain[1]
+  return 'download'
+}
+
+/** Trigger a browser download for a Blob from JS without leaving the SPA. */
+export function downloadBlob(blob: Blob, filename: string): void {
+  const href = URL.createObjectURL(blob)
+  try {
+    const a = document.createElement('a')
+    a.href = href
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+  } finally {
+    // Browsers hold the blob until revocation; defer slightly so the
+    // download has a chance to start.
+    setTimeout(() => URL.revokeObjectURL(href), 30_000)
+  }
+}
+
+/**
+ * Body of POST /archive/ckl|cklb|xccdf. Each entry pins an Asset and
+ * (optionally) the list of STIG benchmarks to include for that asset.
+ * Per the schema, omitting `stigs` requests the default revisions of
+ * every benchmark mapped to the asset and visible to the caller.
+ */
+export type AssetStigSelection = {
+  assetId: string
+  stigs?: Array<string | { benchmarkId: string; revisionStr: string }>
+}
+
+export type CklMode = 'mono' | 'multi'
+
+export async function downloadCklArchive(
+  collectionId: string,
+  selections: AssetStigSelection[],
+  mode: CklMode = 'mono',
+): Promise<void> {
+  const { blob, filename } = await fetchBlob(
+    'POST',
+    `/collections/${encodeURIComponent(collectionId)}/archive/ckl`,
+    { body: selections, query: { mode } },
+  )
+  downloadBlob(blob, filename || `collection-${collectionId}-ckl.zip`)
+}
+
+export async function downloadCklbArchive(
+  collectionId: string,
+  selections: AssetStigSelection[],
+  mode: CklMode = 'mono',
+): Promise<void> {
+  const { blob, filename } = await fetchBlob(
+    'POST',
+    `/collections/${encodeURIComponent(collectionId)}/archive/cklb`,
+    { body: selections, query: { mode } },
+  )
+  downloadBlob(blob, filename || `collection-${collectionId}-cklb.zip`)
+}
+
+export async function downloadXccdfArchive(
+  collectionId: string,
+  selections: AssetStigSelection[],
+): Promise<void> {
+  const { blob, filename } = await fetchBlob(
+    'POST',
+    `/collections/${encodeURIComponent(collectionId)}/archive/xccdf`,
+    { body: selections },
+  )
+  downloadBlob(blob, filename || `collection-${collectionId}-xccdf.zip`)
+}
+
+// ---- POAM (M18e) --------------------------------------------------------
+
+export type PoamAggregator = 'groupId' | 'ruleId'
+export type PoamFormat = 'emass' | 'mccast'
+
+export type PoamInput = {
+  aggregator?: PoamAggregator
+  format?: PoamFormat
+  acceptedOnly?: boolean
+  benchmarkId?: string
+  assetId?: string
+  date?: string
+  office?: string
+  status?: string
+  mccastPackageId?: string
+  mccastAuthName?: string
+}
+
+export async function downloadPoam(
+  collectionId: string,
+  input: PoamInput = {},
+): Promise<void> {
+  const query: Record<string, string> = {}
+  if (input.aggregator) query['aggregator'] = input.aggregator
+  if (input.format) query['format'] = input.format
+  if (input.acceptedOnly) query['acceptedOnly'] = 'true'
+  if (input.benchmarkId) query['benchmarkId'] = input.benchmarkId
+  if (input.assetId) query['assetId'] = input.assetId
+  if (input.date) query['date'] = input.date
+  if (input.office) query['office'] = input.office
+  if (input.status) query['status'] = input.status
+  if (input.mccastPackageId)
+    query['mccastPackageId'] = input.mccastPackageId
+  if (input.mccastAuthName) query['mccastAuthName'] = input.mccastAuthName
+  const { blob, filename } = await fetchBlob(
+    'GET',
+    `/collections/${encodeURIComponent(collectionId)}/poam`,
+    { query },
+  )
+  downloadBlob(blob, filename || `poam-${collectionId}.xlsx`)
 }

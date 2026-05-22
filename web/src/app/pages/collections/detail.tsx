@@ -8,6 +8,10 @@ import { ArrowLeft, Loader2 } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
 
 import { AssetsTab } from '../assets/assets-tab'
+import { ExportsTab } from './exports-tab'
+import { HistoryTab } from './history-tab'
+import { MetricsTab } from './metrics-tab'
+import { PoamTab } from './poam-tab'
 import { ReviewsTab } from './reviews-tab'
 import {
   Card,
@@ -187,12 +191,40 @@ export function CollectionDetailPage() {
           </TabsContent>
         )}
 
+        {visibleTabs.some((t) => t.value === 'metrics') && (
+          <TabsContent value="metrics">
+            <MetricsTab collectionId={c.collectionId} />
+          </TabsContent>
+        )}
+
+        {visibleTabs.some((t) => t.value === 'history') && (
+          <TabsContent value="history">
+            <HistoryTab collectionId={c.collectionId} role={role} />
+          </TabsContent>
+        )}
+
+        {visibleTabs.some((t) => t.value === 'exports') && (
+          <TabsContent value="exports">
+            <ExportsTab collectionId={c.collectionId} />
+          </TabsContent>
+        )}
+
+        {visibleTabs.some((t) => t.value === 'poam') && (
+          <TabsContent value="poam">
+            <PoamTab collectionId={c.collectionId} />
+          </TabsContent>
+        )}
+
         {visibleTabs
           .filter(
             (t) =>
               t.value !== 'overview' &&
               t.value !== 'assets' &&
-              t.value !== 'reviews',
+              t.value !== 'reviews' &&
+              t.value !== 'metrics' &&
+              t.value !== 'history' &&
+              t.value !== 'exports' &&
+              t.value !== 'poam',
           )
           .map((tab) => (
             <TabsContent key={tab.value} value={tab.value}>

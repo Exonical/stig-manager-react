@@ -15,6 +15,7 @@ import {
   createAsset,
   createCollection,
   deleteAsset,
+  deleteReviewHistory,
   fetchAppInfo,
   fetchAsset,
   fetchAssets,
@@ -23,7 +24,12 @@ import {
   fetchCollections,
   fetchCollectionStigs,
   fetchCurrentUser,
+  fetchMetricsSummaryByAsset,
+  fetchMetricsSummaryByStig,
+  fetchMetricsSummaryCollection,
   fetchReviewByAssetRule,
+  fetchReviewHistory,
+  fetchReviewHistoryStats,
   fetchReviewsByAsset,
   fetchRulesByRevision,
   postReviewBatch,
@@ -38,10 +44,17 @@ import {
   type CollectionSummary,
   type CreateCollectionInput,
   type CurrentUser,
+  type DeleteReviewHistoryInput,
+  type MetricsSummaryAggAsset,
+  type MetricsSummaryAggCollection,
+  type MetricsSummaryAggStig,
   type Review,
   type ReviewBatchInput,
   type ReviewBatchResponse,
   type ReviewBatchResponseDryRun,
+  type ReviewHistoryAsset,
+  type ReviewHistoryFilters,
+  type ReviewHistoryStats,
   type ReviewPutInput,
   type ReviewResult,
   type ReviewStatusLabel,
@@ -56,10 +69,17 @@ export type {
   AssetStig,
   AssetUpdateInput,
   CollectionStig,
+  DeleteReviewHistoryInput,
+  MetricsSummaryAggAsset,
+  MetricsSummaryAggCollection,
+  MetricsSummaryAggStig,
   Review,
   ReviewBatchInput,
   ReviewBatchResponse,
   ReviewBatchResponseDryRun,
+  ReviewHistoryAsset,
+  ReviewHistoryFilters,
+  ReviewHistoryStats,
   ReviewPutInput,
   ReviewResult,
   ReviewStatusLabel,
@@ -82,6 +102,19 @@ export const QUERY_KEYS = {
     ['reviews', cid, aid] as const,
   review: (cid: string, aid: string, ruleId: string) =>
     ['review', cid, aid, ruleId] as const,
+  metricsCollection: (cid: string) =>
+    ['collection', cid, 'metrics', 'collection'] as const,
+  metricsAsset: (cid: string) =>
+    ['collection', cid, 'metrics', 'asset'] as const,
+  metricsStig: (cid: string) =>
+    ['collection', cid, 'metrics', 'stig'] as const,
+  reviewHistory: (cid: string, filters?: ReviewHistoryFilters) =>
+    ['collection', cid, 'review-history', filters ?? {}] as const,
+  reviewHistoryStats: (
+    cid: string,
+    params?: { projection?: 'asset' } & ReviewHistoryFilters,
+  ) =>
+    ['collection', cid, 'review-history-stats', params ?? {}] as const,
 } as const
 
 export function useAppInfo(): UseQueryResult<AppInfo> {
@@ -354,6 +387,92 @@ export function useReviewBatch(): UseMutationResult<
       // or more assets — invalidate the list view conservatively.
       if (body.dryRun) return
       void qc.invalidateQueries({ queryKey: ['reviews', collectionId] })
+    },
+  })
+}
+
+// ---- Metrics (M18e) -----------------------------------------------------
+
+export function useMetricsCollection(
+  collectionId: string | undefined,
+): UseQueryResult<MetricsSummaryAggCollection> {
+  return useQuery({
+    queryKey: collectionId
+      ? QUERY_KEYS.metricsCollection(collectionId)
+      : ['metrics', 'noop'],
+    queryFn: () => fetchMetricsSummaryCollection(collectionId as string),
+    enabled: Boolean(collectionId),
+  })
+}
+
+export function useMetricsByAsset(
+  collectionId: string | undefined,
+): UseQueryResult<MetricsSummaryAggAsset[]> {
+  return useQuery({
+    queryKey: collectionId
+      ? QUERY_KEYS.metricsAsset(collectionId)
+      : ['metrics', 'asset', 'noop'],
+    queryFn: () => fetchMetricsSummaryByAsset(collectionId as string),
+    enabled: Boolean(collectionId),
+  })
+}
+
+export function useMetricsByStig(
+  collectionId: string | undefined,
+): UseQueryResult<MetricsSummaryAggStig[]> {
+  return useQuery({
+    queryKey: collectionId
+      ? QUERY_KEYS.metricsStig(collectionId)
+      : ['metrics', 'stig', 'noop'],
+    queryFn: () => fetchMetricsSummaryByStig(collectionId as string),
+    enabled: Boolean(collectionId),
+  })
+}
+
+// ---- Review History (M18e) ----------------------------------------------
+
+export function useReviewHistory(
+  collectionId: string | undefined,
+  filters?: ReviewHistoryFilters,
+): UseQueryResult<ReviewHistoryAsset[]> {
+  return useQuery({
+    queryKey: collectionId
+      ? QUERY_KEYS.reviewHistory(collectionId, filters)
+      : ['review-history', 'noop'],
+    queryFn: () => fetchReviewHistory(collectionId as string, filters),
+    enabled: Boolean(collectionId),
+  })
+}
+
+export function useReviewHistoryStats(
+  collectionId: string | undefined,
+  params?: { projection?: 'asset' } & ReviewHistoryFilters,
+): UseQueryResult<ReviewHistoryStats> {
+  return useQuery({
+    queryKey: collectionId
+      ? QUERY_KEYS.reviewHistoryStats(collectionId, params)
+      : ['review-history-stats', 'noop'],
+    queryFn: () => fetchReviewHistoryStats(collectionId as string, params),
+    enabled: Boolean(collectionId),
+  })
+}
+
+export function useDeleteReviewHistory(): UseMutationResult<
+  { HistoryEntriesDeleted: number },
+  Error,
+  { collectionId: string; input: DeleteReviewHistoryInput }
+> {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ collectionId, input }) =>
+      deleteReviewHistory(collectionId, input),
+    onSuccess: (_data, { collectionId }) => {
+      void qc.invalidateQueries({
+        queryKey: ['collection', collectionId, 'review-history'],
+      })
+      void qc.invalidateQueries({
+        queryKey: ['collection', collectionId, 'review-history-stats'],
+      })
     },
   })
 }

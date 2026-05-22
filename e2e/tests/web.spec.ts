@@ -131,6 +131,83 @@ test.describe('Web SPA', () => {
     ).toBeVisible({ timeout: 10_000 })
   })
 
+  test('metrics tab shows KPI grid and empty state tables (M18e)', async ({
+    page,
+  }) => {
+    await page.goto(`${urls.web}/collections`)
+    const collectionName = `e2e-metrics-${Date.now()}`
+    await page.getByTestId('new-collection-button').click()
+    const cdialog = page.getByTestId('new-collection-dialog')
+    await cdialog.getByTestId('new-collection-name-input').fill(collectionName)
+    await cdialog.getByTestId('new-collection-submit').click()
+    await expect(page).toHaveURL(/\/collections\/\d+$/, { timeout: 10_000 })
+
+    await page.getByTestId('collection-tab-metrics').click()
+    await expect(page.getByTestId('collection-metrics-tab')).toBeVisible()
+
+    // KPI grid is rendered (even though counts are zero for a fresh collection).
+    await expect(page.getByTestId('metrics-kpi-grid')).toBeVisible({
+      timeout: 10_000,
+    })
+    await expect(page.getByTestId('metrics-kpi-assets')).toContainText('0')
+    // Per-asset and per-stig tables show empty state.
+    await expect(page.getByTestId('metrics-by-asset-empty')).toBeVisible()
+    await expect(page.getByTestId('metrics-by-stig-empty')).toBeVisible()
+  })
+
+  test('history tab shows stats and empty entries state (M18e)', async ({
+    page,
+  }) => {
+    await page.goto(`${urls.web}/collections`)
+    const collectionName = `e2e-history-${Date.now()}`
+    await page.getByTestId('new-collection-button').click()
+    const cdialog = page.getByTestId('new-collection-dialog')
+    await cdialog.getByTestId('new-collection-name-input').fill(collectionName)
+    await cdialog.getByTestId('new-collection-submit').click()
+    await expect(page).toHaveURL(/\/collections\/\d+$/, { timeout: 10_000 })
+
+    await page.getByTestId('collection-tab-history').click()
+    await expect(page.getByTestId('collection-history-tab')).toBeVisible()
+
+    // Stats panel is visible.
+    await expect(page.getByTestId('history-stats')).toBeVisible({
+      timeout: 10_000,
+    })
+    await expect(page.getByTestId('history-total-entries')).toContainText('0')
+    // No history entries yet → empty state.
+    await expect(page.getByTestId('history-empty')).toBeVisible()
+  })
+
+  test('exports tab renders the download form (M18e)', async ({ page }) => {
+    await page.goto(`${urls.web}/collections`)
+    const collectionName = `e2e-exports-${Date.now()}`
+    await page.getByTestId('new-collection-button').click()
+    const cdialog = page.getByTestId('new-collection-dialog')
+    await cdialog.getByTestId('new-collection-name-input').fill(collectionName)
+    await cdialog.getByTestId('new-collection-submit').click()
+    await expect(page).toHaveURL(/\/collections\/\d+$/, { timeout: 10_000 })
+
+    await page.getByTestId('collection-tab-exports').click()
+    await expect(page.getByTestId('collection-exports-tab')).toBeVisible()
+    await expect(page.getByTestId('export-format-toggle')).toBeVisible()
+    await expect(page.getByTestId('export-download-button')).toBeVisible()
+  })
+
+  test('POAM tab renders the download form (M18e)', async ({ page }) => {
+    await page.goto(`${urls.web}/collections`)
+    const collectionName = `e2e-poam-${Date.now()}`
+    await page.getByTestId('new-collection-button').click()
+    const cdialog = page.getByTestId('new-collection-dialog')
+    await cdialog.getByTestId('new-collection-name-input').fill(collectionName)
+    await cdialog.getByTestId('new-collection-submit').click()
+    await expect(page).toHaveURL(/\/collections\/\d+$/, { timeout: 10_000 })
+
+    await page.getByTestId('collection-tab-poam').click()
+    await expect(page.getByTestId('collection-poam-tab')).toBeVisible()
+    await expect(page.getByTestId('poam-aggregator')).toBeVisible()
+    await expect(page.getByTestId('poam-download-button')).toBeVisible()
+  })
+
   test('dry-run batch review surfaces will-insert counts (M18d)', async ({
     page,
   }) => {
