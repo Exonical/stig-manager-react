@@ -1531,12 +1531,23 @@ export async function fetchCci(cci: string): Promise<CciDetail> {
   return result.data as unknown as CciDetail
 }
 
-/** Response body shape for POST /stigs. */
-export type ImportBenchmarkResult = {
+/** A single revision import result returned by POST /stigs. */
+export type ImportBenchmarkRevision = {
   action?: string
   benchmarkId?: string
   revisionStr?: string
   marking?: string
+}
+
+/**
+ * Response shape for POST /stigs. The server returns the bare object
+ * for a single-XCCDF upload (raw .xml or a zip containing one XCCDF)
+ * and an array of objects for a multi-XCCDF zip. The hook normalises
+ * both into `revisions: [...]` and surfaces the first element via
+ * the legacy top-level fields for backward compatibility.
+ */
+export type ImportBenchmarkResult = ImportBenchmarkRevision & {
+  revisions: ImportBenchmarkRevision[]
 }
 
 export type ImportBenchmarkInput = {
@@ -1581,7 +1592,12 @@ export async function importBenchmark(
       `import benchmark: HTTP ${resp.status}${detail ? ` — ${detail}` : ''}`,
     )
   }
-  return (await resp.json()) as ImportBenchmarkResult
+  const raw = (await resp.json()) as
+    | ImportBenchmarkRevision
+    | ImportBenchmarkRevision[]
+  const revisions: ImportBenchmarkRevision[] = Array.isArray(raw) ? raw : [raw]
+  const first = revisions[0] ?? {}
+  return { ...first, revisions }
 }
 
 export async function deleteSTIG(benchmarkId: string): Promise<void> {

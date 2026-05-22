@@ -69,18 +69,21 @@ export function ImportStigDialog({
         <DialogHeader>
           <DialogTitle>Import XCCDF Benchmark</DialogTitle>
           <DialogDescription>
-            Upload a DISA XCCDF Benchmark file. Existing
-            (benchmark, revision) pairs are rejected unless you enable
-            clobber.
+            Upload a DISA XCCDF Benchmark — a raw{' '}
+            <code>.xml</code> file, a DISA STIG{' '}
+            <code>.zip</code> bundle (e.g.{' '}
+            <code>U_RHEL_10_V1R1_STIG.zip</code>), or a STIG Library
+            quarterly zip. Existing (benchmark, revision) pairs are
+            rejected unless you enable clobber.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={onSubmit} className="space-y-4">
           <div className="space-y-1.5">
-            <Label htmlFor="import-file">XCCDF file</Label>
+            <Label htmlFor="import-file">XCCDF file or DISA zip</Label>
             <input
               id="import-file"
               type="file"
-              accept=".xml,.xccdf,application/xml,text/xml"
+              accept=".xml,.xccdf,.zip,application/xml,text/xml,application/zip"
               onChange={(e) => setFile(e.target.files?.[0] ?? null)}
               className="block w-full text-sm text-[var(--color-foreground)] file:mr-3 file:rounded-md file:border file:border-[var(--color-border)] file:bg-[var(--color-card)] file:px-2 file:py-1 file:text-sm file:font-medium hover:file:bg-[var(--color-accent)]/40"
               data-testid="import-file-input"
@@ -110,11 +113,22 @@ export function ImportStigDialog({
               className="rounded-md border border-[var(--color-border)] bg-[var(--color-card)]/40 p-3 text-sm"
               data-testid="import-stig-result"
             >
-              <p className="font-semibold">Import succeeded</p>
-              <p className="font-mono text-xs">
-                {result.benchmarkId} · revision {result.revisionStr}
-                {result.action ? ` · ${result.action}` : ''}
+              <p className="font-semibold">
+                Import succeeded
+                {result.revisions.length > 1 && (
+                  <span className="ml-2 text-xs text-[var(--color-muted-foreground)]">
+                    ({result.revisions.length} revisions)
+                  </span>
+                )}
               </p>
+              <ul className="space-y-1">
+                {result.revisions.map((r, i) => (
+                  <li key={`${r.benchmarkId}-${r.revisionStr}-${i}`} className="font-mono text-xs">
+                    {r.benchmarkId} · revision {r.revisionStr}
+                    {r.action ? ` · ${r.action}` : ''}
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
           <DialogFooter>
