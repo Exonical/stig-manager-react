@@ -33,6 +33,7 @@ type Job struct {
 	EventEnds        *time.Time
 	EventIntervalFld *string
 	EventIntervalVal *string
+	LastEventFire    *time.Time
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 	CreatedByUserID  *int64
@@ -149,7 +150,7 @@ func (r *JobRepo) List(ctx context.Context) ([]Job, error) {
 	rows, err := r.pool.Query(ctx, `
 SELECT job_id, name, description,
        event_type, event_id, event_enabled, event_starts, event_ends,
-       event_interval_field, event_interval_value,
+       event_interval_field, event_interval_value, last_event_fire,
        created_at, updated_at,
        created_by_user_id, updated_by_user_id
 FROM job
@@ -182,7 +183,7 @@ func (r *JobRepo) Get(ctx context.Context, jobID int64) (Job, error) {
 	row := r.pool.QueryRow(ctx, `
 SELECT job_id, name, description,
        event_type, event_id, event_enabled, event_starts, event_ends,
-       event_interval_field, event_interval_value,
+       event_interval_field, event_interval_value, last_event_fire,
        created_at, updated_at,
        created_by_user_id, updated_by_user_id
 FROM job
@@ -521,11 +522,60 @@ func scanJobRow(s pgRow) (Job, error) {
 	err := s.Scan(
 		&j.JobID, &j.Name, &j.Description,
 		&j.EventType, &j.EventID, &j.EventEnabled, &j.EventStarts, &j.EventEnds,
-		&j.EventIntervalFld, &j.EventIntervalVal,
+		&j.EventIntervalFld, &j.EventIntervalVal, &j.LastEventFire,
 		&j.CreatedAt, &j.UpdatedAt,
 		&j.CreatedByUserID, &j.UpdatedByUserID,
 	)
 	return j, err
+}
+
+// ListEnabledScheduled returns every job with a non-NULL event_type
+// and event_enabled = TRUE. Tasks and run summaries are NOT hydrated;
+// the scheduler only needs the trigger metadata.
+func (r *JobRepo) ListEnabledScheduled(ctx context.Context) ([]Job, error) {
+	rows, err := r.pool.Query(ctx, `
+SELECT job_id, name, description,
+       event_type, event_id, event_enabled, event_starts, event_ends,
+       event_interval_field, event_interval_value, last_event_fire,
+       created_at, updated_at,
+       created_by_user_id, updated_by_user_id
+FROM job
+WHERE event_type IS NOT NULL AND event_enabled = TRUE
+ORDER BY job_id ASC`)
+	if err != nil {
+		return nil, fmt.Errorf("list scheduled jobs: %w", err)
+	}
+	defer rows.Close()
+	var out []Job
+	for rows.Next() {
+		j, err := scanJobRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, j)
+	}
+	return out, rows.Err()
+}
+
+// ClaimEventFire conditionally updates last_event_fire for jobID to
+// fireTime, returning (true, nil) when the update happened. The
+// condition (last_event_fire IS NULL OR last_event_fire < fireTime)
+// makes the claim idempotent across concurrent scheduler ticks and
+// safe against restarts: two ticks proposing the same fire time will
+// only succeed once.
+func (r *JobRepo) ClaimEventFire(ctx context.Context, jobID int64, fireTime time.Time) (bool, error) {
+	tag, err := r.pool.Exec(ctx, `
+UPDATE job
+SET    last_event_fire = $2,
+       updated_at      = now()
+WHERE  job_id = $1
+  AND  (last_event_fire IS NULL OR last_event_fire < $2)
+  AND  event_enabled = TRUE
+  AND  event_type IS NOT NULL`, jobID, fireTime)
+	if err != nil {
+		return false, fmt.Errorf("claim event fire: %w", err)
+	}
+	return tag.RowsAffected() == 1, nil
 }
 
 // newEventID generates a short, stable string handle for the event

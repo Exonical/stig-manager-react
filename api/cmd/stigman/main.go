@@ -117,6 +117,19 @@ func run() error {
 		}
 	}()
 
+	// Start the job scheduler (if wired) in its own goroutine. The
+	// cancelation cascades from the same shutdown context as the
+	// http listener so SIGTERM stops both.
+	schedulerDone := make(chan struct{})
+	if srv.Scheduler != nil {
+		go func() {
+			defer close(schedulerDone)
+			srv.Scheduler.Run(ctx)
+		}()
+	} else {
+		close(schedulerDone)
+	}
+
 	select {
 	case <-ctx.Done():
 		logger.Info("shutdown signal received, stopping http server")
@@ -130,6 +143,16 @@ func run() error {
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {
 		return fmt.Errorf("graceful shutdown: %w", err)
 	}
+
+	// Wait for the scheduler goroutine to exit (or the shutdown
+	// budget to elapse). It observes ctx, which is cancelled by the
+	// signal handler above.
+	select {
+	case <-schedulerDone:
+	case <-shutdownCtx.Done():
+		logger.Warn("scheduler did not stop within shutdown budget")
+	}
+
 	logger.Info("stopped cleanly")
 	return nil
 }
