@@ -277,3 +277,109 @@ func TestSchedulerIdempotentClaim(t *testing.T) {
 		t.Fatalf("later claim should succeed")
 	}
 }
+
+// TestSchedulerPatchResetsLastEventFire exercises the M20.1 fix:
+// after a 'once' job fires, PATCHing its event_type must clear
+// last_event_fire so the scheduler fires it again.
+func TestSchedulerPatchResetsLastEventFire(t *testing.T) {
+	h, ctx := newSchedulerHarness(t)
+
+	starts := time.Now().Add(-time.Minute).UTC().Truncate(time.Microsecond)
+	job, err := h.repo.Create(ctx, store.JobCreate{
+		Name:        "sched-repatch",
+		EventType:   ptrStrInt("once"),
+		EventStarts: &starts,
+		TaskIDs:     []int64{h.noopID},
+	})
+	if err != nil {
+		t.Fatalf("create job: %v", err)
+	}
+
+	// Fire once.
+	h.scheduler.RunOnce(ctx)
+	runs, err := h.repo.ListRuns(ctx, job.JobID)
+	if err != nil {
+		t.Fatalf("list runs: %v", err)
+	}
+	if len(runs) != 1 {
+		t.Fatalf("want 1 run after first tick, got %d", len(runs))
+	}
+
+	// Confirm last_event_fire is set.
+	got, err := h.repo.Get(ctx, job.JobID)
+	if err != nil {
+		t.Fatalf("get job: %v", err)
+	}
+	if got.LastEventFire == nil {
+		t.Fatalf("last_event_fire should be set after first fire")
+	}
+
+	// PATCH the job with a new event_type (re-schedule).
+	newStarts := time.Now().Add(-30 * time.Second).UTC().Truncate(time.Microsecond)
+	_, err = h.repo.Patch(ctx, job.JobID, store.JobPatch{
+		EventType:   ptrStrInt("once"),
+		EventStarts: &newStarts,
+	})
+	if err != nil {
+		t.Fatalf("patch job: %v", err)
+	}
+
+	// Verify last_event_fire was cleared.
+	got, err = h.repo.Get(ctx, job.JobID)
+	if err != nil {
+		t.Fatalf("get job after patch: %v", err)
+	}
+	if got.LastEventFire != nil {
+		t.Fatalf("last_event_fire should be nil after patch, got %v", got.LastEventFire)
+	}
+
+	// Fire again — should produce a second run.
+	h.scheduler.RunOnce(ctx)
+	runs, err = h.repo.ListRuns(ctx, job.JobID)
+	if err != nil {
+		t.Fatalf("list runs after re-fire: %v", err)
+	}
+	if len(runs) != 2 {
+		t.Fatalf("want 2 runs after re-fire, got %d", len(runs))
+	}
+}
+
+// TestSchedulerClearEventResetsLastEventFire verifies that the
+// ClearEvent path also resets last_event_fire.
+func TestSchedulerClearEventResetsLastEventFire(t *testing.T) {
+	h, ctx := newSchedulerHarness(t)
+
+	starts := time.Now().Add(-time.Minute).UTC().Truncate(time.Microsecond)
+	job, err := h.repo.Create(ctx, store.JobCreate{
+		Name:        "sched-clear",
+		EventType:   ptrStrInt("once"),
+		EventStarts: &starts,
+		TaskIDs:     []int64{h.noopID},
+	})
+	if err != nil {
+		t.Fatalf("create job: %v", err)
+	}
+
+	// Fire once.
+	h.scheduler.RunOnce(ctx)
+	got, err := h.repo.Get(ctx, job.JobID)
+	if err != nil {
+		t.Fatalf("get job: %v", err)
+	}
+	if got.LastEventFire == nil {
+		t.Fatalf("last_event_fire should be set")
+	}
+
+	// ClearEvent — must null last_event_fire too.
+	_, err = h.repo.Patch(ctx, job.JobID, store.JobPatch{ClearEvent: true})
+	if err != nil {
+		t.Fatalf("patch clear: %v", err)
+	}
+	got, err = h.repo.Get(ctx, job.JobID)
+	if err != nil {
+		t.Fatalf("get after clear: %v", err)
+	}
+	if got.LastEventFire != nil {
+		t.Fatalf("last_event_fire should be nil after ClearEvent, got %v", got.LastEventFire)
+	}
+}

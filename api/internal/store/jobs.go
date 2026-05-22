@@ -268,12 +268,14 @@ func (r *JobRepo) Patch(ctx context.Context, jobID int64, in JobPatch) (Job, err
 			"event_starts = NULL",
 			"event_ends = NULL",
 			"event_interval_field = NULL",
-			"event_interval_value = NULL")
+			"event_interval_value = NULL",
+			"last_event_fire = NULL")
 	} else {
 		if in.EventType != nil {
 			sets = append(sets, fmt.Sprintf("event_type = $%d", idx))
 			args = append(args, *in.EventType)
 			idx++
+			sets = append(sets, "last_event_fire = NULL")
 		}
 		if in.EventStarts != nil {
 			sets = append(sets, fmt.Sprintf("event_starts = $%d", idx))
