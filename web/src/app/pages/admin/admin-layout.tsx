@@ -2,7 +2,7 @@
 // per-page content. Visibility of each link respects the same scope
 // rules as the sidebar so we don't show links the user can't follow.
 
-import { Briefcase, ClipboardList, Users, UsersRound } from 'lucide-react'
+import { Briefcase, ClipboardList, ScrollText, Users, UsersRound } from 'lucide-react'
 import { NavLink, Outlet } from 'react-router-dom'
 
 import { useAuth } from '@/lib/auth/auth-context'
@@ -39,6 +39,12 @@ const ADMIN_TABS: readonly AdminNavItem[] = [
     to: '/admin/app-info',
     label: 'App info',
     icon: ClipboardList,
+    scope: 'stig-manager:op:read',
+  },
+  {
+    to: '/admin/audit-log',
+    label: 'Audit log',
+    icon: ScrollText,
     scope: 'stig-manager:op:read',
   },
 ]

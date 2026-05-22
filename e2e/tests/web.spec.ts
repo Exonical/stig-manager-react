@@ -271,6 +271,7 @@ test.describe('Web SPA', () => {
     await expect(tabs.getByTestId('admin-tab-user-groups')).toBeVisible()
     await expect(tabs.getByTestId('admin-tab-jobs')).toBeVisible()
     await expect(tabs.getByTestId('admin-tab-app-info')).toBeVisible()
+    await expect(tabs.getByTestId('admin-tab-audit-log')).toBeVisible()
   })
 
   test('admin users page lists demo users (M18f)', async ({ page }) => {
@@ -423,5 +424,69 @@ test.describe('Web SPA', () => {
     await expect(dialog.getByTestId('import-clobber-checkbox')).toBeVisible()
     // Submit is disabled until a file is chosen.
     await expect(dialog.getByTestId('import-stig-submit')).toBeDisabled()
+  })
+
+  test('admin audit log page renders with table + filters (M19)', async ({
+    page,
+  }) => {
+    await page.goto(`${urls.web}/admin/audit-log`)
+    await expect(page.getByTestId('admin-audit-log-page')).toBeVisible()
+    await expect(page.getByTestId('audit-filter-form')).toBeVisible()
+    await expect(page.getByTestId('audit-table')).toBeVisible({
+      timeout: 10_000,
+    })
+    await expect(page.getByTestId('audit-method-select')).toBeVisible()
+    await expect(page.getByTestId('audit-path-input')).toBeVisible()
+    await expect(page.getByTestId('audit-since-input')).toBeVisible()
+    await expect(page.getByTestId('audit-until-input')).toBeVisible()
+    await expect(page.getByTestId('audit-limit-input')).toBeVisible()
+    await expect(page.getByTestId('audit-apply')).toBeVisible()
+  })
+
+  test('admin audit log records a mutation and the row expands (M19)', async ({
+    page,
+  }) => {
+    // Generate a fresh mutation so we know at least one row exists
+    // (the audit middleware records POSTs synchronously after the
+    // handler runs, then writes asynchronously with a 5s timeout).
+    await page.goto(`${urls.web}/collections`)
+    const collectionName = `e2e-audit-${Date.now()}`
+    await page.getByTestId('new-collection-button').click()
+    const cdialog = page.getByTestId('new-collection-dialog')
+    await cdialog.getByTestId('new-collection-name-input').fill(collectionName)
+    await cdialog.getByTestId('new-collection-submit').click()
+    await expect(page).toHaveURL(/\/collections\/\d+$/, { timeout: 10_000 })
+
+    await page.goto(`${urls.web}/admin/audit-log`)
+    await expect(page.getByTestId('admin-audit-log-page')).toBeVisible()
+
+    // Filter to POST /api/collections to narrow the result set, then
+    // expand the first row and assert the payload viewer is rendered.
+    await page.getByTestId('audit-method-select').selectOption('POST')
+    await page.getByTestId('audit-path-input').fill('/api/collections')
+    await page.getByTestId('audit-apply').click()
+
+    const table = page.getByTestId('audit-table')
+    // Give the audit row a moment to land (async writer).
+    await expect(async () => {
+      await page.getByTestId('audit-refresh').click()
+      const rows = await table.locator('tbody tr').count()
+      // Each audit row renders one base <tr>; expanded rows add a 2nd.
+      // We expect at least one populated data row (not the empty-state
+      // placeholder, which spans 7 cols).
+      expect(rows).toBeGreaterThanOrEqual(1)
+      const empty = await table
+        .getByText('No rows match the current filters.')
+        .count()
+      expect(empty).toBe(0)
+    }).toPass({ timeout: 15_000 })
+
+    const firstToggle = page
+      .locator('[data-testid^="audit-row-toggle-"]')
+      .first()
+    await firstToggle.click()
+    await expect(
+      page.locator('[data-testid^="audit-row-payload-"]').first(),
+    ).toBeVisible({ timeout: 5_000 })
   })
 })

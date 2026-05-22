@@ -8,6 +8,7 @@ import {
   Briefcase,
   ClipboardList,
   Layers,
+  ScrollText,
   ShieldCheck,
   Users,
   UsersRound,
@@ -62,6 +63,12 @@ export const ADMIN_NAV: readonly NavItem[] = [
     to: '/admin/app-info',
     label: 'App info',
     icon: ClipboardList,
+    scope: 'stig-manager:op:read',
+  },
+  {
+    to: '/admin/audit-log',
+    label: 'Audit log',
+    icon: ScrollText,
     scope: 'stig-manager:op:read',
   },
 ] as const
