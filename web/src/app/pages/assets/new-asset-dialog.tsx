@@ -1,8 +1,8 @@
 // New Asset dialog. Creates an Asset inside the given Collection and
-// optionally maps it to a set of STIGs. The STIG picker shows every
-// STIG already mapped into the Collection — assigning a STIG to an
-// Asset requires the STIG to first be present in the Collection
-// (upstream guards this with a 422).
+// optionally maps it to a set of STIGs. The STIG picker is drawn from
+// the global Library (`GET /stigs`) — any imported benchmark can be
+// assigned to an Asset. The Collection's STIG inventory is then
+// derived from the union of STIGs across its Assets.
 
 import { Loader2 } from 'lucide-react'
 import * as React from 'react'
@@ -22,8 +22,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import {
-  useCollectionStigs,
   useCreateAsset,
+  useSTIGs,
   useUpdateAsset,
   type Asset,
   type AssetStig,
@@ -46,7 +46,7 @@ export function NewAssetDialog({
   const navigate = useNavigate()
   const create = useCreateAsset()
   const update = useUpdateAsset()
-  const stigs = useCollectionStigs(collectionId)
+  const stigs = useSTIGs()
 
   const editing = Boolean(asset)
 
@@ -228,32 +228,40 @@ export function NewAssetDialog({
             >
               {stigs.isLoading && (
                 <p className="text-sm text-[var(--color-muted-foreground)]">
-                  Loading mapped STIGs…
+                  Loading STIG library…
                 </p>
               )}
               {stigs.data && stigs.data.length === 0 && (
                 <p className="text-sm text-[var(--color-muted-foreground)]">
-                  No STIGs are mapped in this Collection yet. Use the STIG
-                  Library (M18g) to import benchmarks.
+                  No STIGs imported yet. Go to the{' '}
+                  <a className="underline" href="/library">
+                    STIG Library
+                  </a>{' '}
+                  to import a benchmark.
                 </p>
               )}
               {stigs.data?.map((s) => (
                 <label
                   key={s.benchmarkId}
-                  className="flex items-center gap-2 py-1 text-sm"
+                  className="flex items-start gap-2 py-1 text-sm"
                 >
                   <input
                     type="checkbox"
+                    className="mt-1"
                     checked={selectedStigs.has(s.benchmarkId)}
                     onChange={() => toggleStig(s.benchmarkId)}
                     data-testid={`asset-stig-${s.benchmarkId}`}
                   />
-                  <span className="font-mono text-xs">{s.benchmarkId}</span>
-                  {s.revisionStr && (
-                    <span className="text-xs text-[var(--color-muted-foreground)]">
-                      {s.revisionStr}
-                    </span>
-                  )}
+                  <span className="flex flex-col">
+                    <span className="font-mono text-xs">{s.benchmarkId}</span>
+                    {(s.title || s.lastRevisionStr) && (
+                      <span className="text-xs text-[var(--color-muted-foreground)]">
+                        {s.title}
+                        {s.title && s.lastRevisionStr ? ' · ' : ''}
+                        {s.lastRevisionStr ?? ''}
+                      </span>
+                    )}
+                  </span>
                 </label>
               ))}
             </div>

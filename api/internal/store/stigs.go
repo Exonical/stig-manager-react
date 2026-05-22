@@ -23,6 +23,19 @@ type STIG struct {
 	RevisionStrs    []string
 }
 
+// CollectionSTIG mirrors the upstream CollectionStigWithAssetCount
+// model: a STIG mapped (via at least one asset) into a Collection,
+// together with the count of assets in that Collection using it.
+type CollectionSTIG struct {
+	BenchmarkID    string
+	Title          string
+	RevisionStr    string
+	BenchmarkDate  *time.Time
+	RuleCount      int
+	AssetCount     int
+	RevisionPinned bool
+}
+
 // Revision is a single imported version of a STIG.
 type Revision struct {
 	RevisionID    int64
@@ -294,6 +307,91 @@ func (r *STIGRepo) Get(ctx context.Context, benchmarkID string) (*STIG, error) {
 	}
 	s.LastRevisionDate = date
 	return &s, nil
+}
+
+// ListByCollection returns each STIG mapped (via at least one asset)
+// into the given collection, together with the count of assets using
+// it. The revisionStr surfaced is the latest imported revision for
+// that benchmark, matching List's "latest" semantics.
+func (r *STIGRepo) ListByCollection(ctx context.Context, collectionID int64) ([]CollectionSTIG, error) {
+	const q = `
+		WITH latest AS (
+			SELECT DISTINCT ON (benchmark_id)
+				revision_id, benchmark_id, revision_str, benchmark_date
+			FROM stig_revision
+			ORDER BY benchmark_id, revision_id DESC
+		)
+		SELECT s.benchmark_id,
+		       s.title,
+		       COALESCE(l.revision_str, ''),
+		       l.benchmark_date,
+		       COALESCE((SELECT COUNT(*) FROM stig_rule sr WHERE sr.revision_id = l.revision_id), 0)::int AS rule_count,
+		       COUNT(DISTINCT a.asset_id)::int AS asset_count
+		FROM stig s
+		JOIN asset_stig as_ ON as_.benchmark_id = s.benchmark_id
+		JOIN asset a ON a.asset_id = as_.asset_id
+		LEFT JOIN latest l ON l.benchmark_id = s.benchmark_id
+		WHERE a.collection_id = $1
+		GROUP BY s.benchmark_id, s.title, l.revision_str, l.benchmark_date, l.revision_id
+		ORDER BY s.benchmark_id`
+	rows, err := r.pool.Query(ctx, q, collectionID)
+	if err != nil {
+		return nil, fmt.Errorf("list stigs by collection: %w", err)
+	}
+	defer rows.Close()
+	out := make([]CollectionSTIG, 0)
+	for rows.Next() {
+		var c CollectionSTIG
+		var date *time.Time
+		if err := rows.Scan(&c.BenchmarkID, &c.Title, &c.RevisionStr, &date, &c.RuleCount, &c.AssetCount); err != nil {
+			return nil, fmt.Errorf("scan collection stig: %w", err)
+		}
+		c.BenchmarkDate = date
+		out = append(out, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows collection stigs: %w", err)
+	}
+	return out, nil
+}
+
+// GetByCollection returns the CollectionSTIG row for a single
+// benchmark mapped into the collection. Returns ErrNotFound when no
+// asset in the collection references the benchmark.
+func (r *STIGRepo) GetByCollection(ctx context.Context, collectionID int64, benchmarkID string) (*CollectionSTIG, error) {
+	const q = `
+		WITH latest AS (
+			SELECT revision_id, benchmark_id, revision_str, benchmark_date
+			FROM stig_revision
+			WHERE benchmark_id = $2
+			ORDER BY revision_id DESC
+			LIMIT 1
+		)
+		SELECT s.benchmark_id,
+		       s.title,
+		       COALESCE(l.revision_str, ''),
+		       l.benchmark_date,
+		       COALESCE((SELECT COUNT(*) FROM stig_rule sr WHERE sr.revision_id = l.revision_id), 0)::int AS rule_count,
+		       COUNT(DISTINCT a.asset_id)::int AS asset_count
+		FROM stig s
+		JOIN asset_stig as_ ON as_.benchmark_id = s.benchmark_id
+		JOIN asset a ON a.asset_id = as_.asset_id
+		LEFT JOIN latest l ON l.benchmark_id = s.benchmark_id
+		WHERE a.collection_id = $1 AND s.benchmark_id = $2
+		GROUP BY s.benchmark_id, s.title, l.revision_str, l.benchmark_date, l.revision_id`
+	var c CollectionSTIG
+	var date *time.Time
+	err := r.pool.QueryRow(ctx, q, collectionID, benchmarkID).Scan(
+		&c.BenchmarkID, &c.Title, &c.RevisionStr, &date, &c.RuleCount, &c.AssetCount,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get collection stig: %w", err)
+	}
+	c.BenchmarkDate = date
+	return &c, nil
 }
 
 // GetRuleByRuleID returns the most-recent imported version of a rule by
