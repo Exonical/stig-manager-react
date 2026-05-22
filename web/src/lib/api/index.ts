@@ -417,3 +417,71 @@ export async function fetchCollectionStigs(
   }
   return result.data as unknown as CollectionStig[]
 }
+
+/**
+ * Cross-product bulk-review mutation: applies a single source review
+ * to every (asset, rule) pair resolved from the supplied criteria.
+ * Mirrors the `ReviewBatch` schema in docs/openapi/stig-manager.yaml.
+ *
+ * `assets` is exclusive-or between asset IDs and benchmark IDs; same
+ * for `rules`. The server enforces the same xor with a 400. `action`
+ * defaults to `merge` when omitted; we surface it explicitly here so
+ * the UI doesn't accidentally rely on the server default. `dryRun`
+ * is required by the schema (default false) so we always send a
+ * concrete value.
+ */
+export type ReviewBatchInput = {
+  assets: { assetIds: string[] } | { benchmarkIds: string[] }
+  rules: { ruleIds: string[] } | { benchmarkIds: string[] }
+  source: {
+    review: {
+      result?: ReviewResult
+      detail?: string
+      comment?: string
+      status?:
+        | ReviewStatusLabel
+        | { label: ReviewStatusLabel; text?: string | null }
+    }
+  }
+  action: 'insert' | 'update' | 'merge'
+  dryRun: boolean
+  updateFilters?: unknown[]
+}
+
+export type ReviewBatchResponse = {
+  inserted: number
+  updated: number
+  failedValidation: number
+  validationErrors: Array<{
+    assetId?: string
+    ruleId?: string
+    error?: string
+  }>
+}
+
+export type ReviewBatchResponseDryRun = {
+  willInsert: number
+  willUpdate: number
+  willFailValidation: number
+  validationErrors: Array<{
+    assetId?: string
+    ruleId?: string
+    error?: string
+  }>
+}
+
+export async function postReviewBatch(
+  collectionId: string,
+  body: ReviewBatchInput,
+): Promise<ReviewBatchResponse | ReviewBatchResponseDryRun> {
+  const result = await apiClient.POST('/collections/{collectionId}/reviews', {
+    params: { path: { collectionId } },
+    body: body as never,
+  })
+  if (!result.response.ok || !result.data) {
+    throw new Error(`batch review: HTTP ${result.response.status}`)
+  }
+  return result.data as unknown as
+    | ReviewBatchResponse
+    | ReviewBatchResponseDryRun
+}
