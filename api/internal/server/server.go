@@ -51,8 +51,9 @@ type Options struct {
 
 // Server holds the HTTP router and its dependencies.
 type Server struct {
-	opts   Options
-	router http.Handler
+	opts      Options
+	router    http.Handler
+	Scheduler *jobs.Scheduler
 }
 
 // New constructs a Server with the given options.
@@ -179,6 +180,23 @@ func New(opts Options) *Server {
 		apiServer.JobRunner.SetListener(brokerJobListener{broker: broker})
 	}
 
+	// Wire the cron loop that dispatches scheduled jobs. The
+	// scheduler is only constructed; the caller (cmd/stigman) starts
+	// the goroutine alongside the http listener and cancels its
+	// context on shutdown.
+	var scheduler *jobs.Scheduler
+	if opts.Pool != nil && opts.Config != nil && opts.Config.Scheduler.Enabled {
+		s, err := jobs.NewScheduler(apiServer.Jobs, apiServer.JobRunner, jobs.SchedulerConfig{
+			Tick:   opts.Config.Scheduler.TickFreq,
+			Logger: opts.Logger,
+		})
+		if err != nil {
+			opts.Logger.Error("scheduler init", "err", err)
+		} else {
+			scheduler = s
+		}
+	}
+
 	// /api/op/audit-log is an admin-only read endpoint that surfaces
 	// the audit_log rows captured by the audit middleware. It is not
 	// part of the upstream OpenAPI surface (the table itself is
@@ -192,7 +210,7 @@ func New(opts Options) *Server {
 	// spec are relative to /api.
 	api.HandlerFromMuxWithBaseURL(apiServer, r, "/api")
 
-	return &Server{opts: opts, router: r}
+	return &Server{opts: opts, router: r, Scheduler: scheduler}
 }
 
 // Router exposes the configured http.Handler.

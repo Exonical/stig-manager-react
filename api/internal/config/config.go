@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Config captures runtime configuration for the API server.
@@ -30,6 +31,17 @@ type Config struct {
 	// RateLimit caps incoming request volume per authenticated user
 	// (or per remote IP when anonymous).
 	RateLimit RateLimitConfig
+	// Scheduler controls the cron loop that dispatches recurring /
+	// once jobs based on each row's event_* columns.
+	Scheduler SchedulerConfig
+}
+
+// SchedulerConfig controls the in-process job scheduler. When
+// Enabled is false the scheduler goroutine is not started and only
+// manual POST /jobs/{jobId}/runs triggers a run.
+type SchedulerConfig struct {
+	Enabled  bool
+	TickFreq time.Duration
 }
 
 // RateLimitConfig caps per-client request volume. When Enabled is
@@ -116,6 +128,10 @@ func Load() (*Config, error) {
 			Enabled: envBool("STIGMAN_RATE_LIMIT_ENABLED", true),
 			Rate:    envFloat("STIGMAN_RATE_LIMIT_RPS", 50),
 			Burst:   envInt("STIGMAN_RATE_LIMIT_BURST", 100),
+		},
+		Scheduler: SchedulerConfig{
+			Enabled:  envBool("STIGMAN_SCHEDULER_ENABLED", true),
+			TickFreq: time.Duration(envInt("STIGMAN_SCHEDULER_TICK_SECONDS", 30)) * time.Second,
 		},
 	}
 
