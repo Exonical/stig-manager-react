@@ -140,3 +140,280 @@ export async function createCollection(
   }
   return result.data as unknown as CollectionSummary
 }
+
+/**
+ * Asset record returned by GET /assets and GET /assets/{assetId}.
+ * Mirrors the upstream `AssetProjected` schema (mostly) — extra
+ * projections like `statusStats` and `stigs` are available when
+ * `projection` is provided as a query parameter.
+ */
+export type Asset = {
+  assetId: string
+  collection?: { collectionId?: string; name?: string }
+  description?: string | null
+  fqdn?: string | null
+  ip?: string | null
+  mac?: string | null
+  metadata?: Record<string, string>
+  name: string
+  noncomputing?: boolean
+  labelIds?: string[]
+  labels?: Array<{ labelId?: string; name?: string; color?: string | null }>
+  stigs?: AssetStig[]
+}
+
+export type AssetStig = {
+  benchmarkId: string
+  revisionStr?: string
+  benchmarkDate?: string | null
+  revisionPinned?: boolean
+  ruleCount?: number | null
+}
+
+/**
+ * Lists Assets visible to the signed-in user. `collectionId` is
+ * effectively required for the SPA to scope the call to a single
+ * Collection.
+ */
+export async function fetchAssets(params: {
+  collectionId: string
+  name?: string
+  labelId?: string
+}): Promise<Asset[]> {
+  const query: Record<string, string | string[]> = {
+    collectionId: params.collectionId,
+    projection: 'stigs',
+  }
+  if (params.name) query['name'] = params.name
+  if (params.labelId) query['labelId'] = [params.labelId]
+  const result = await apiClient.GET('/assets', {
+    params: { query: query as never },
+  })
+  if (!result.response.ok || !result.data) {
+    throw new Error(`assets: HTTP ${result.response.status}`)
+  }
+  return result.data as unknown as Asset[]
+}
+
+/**
+ * Fetches a single Asset by id (with stigs projection by default).
+ */
+export async function fetchAsset(assetId: string): Promise<Asset> {
+  const result = await apiClient.GET('/assets/{assetId}', {
+    params: {
+      path: { assetId },
+      query: { projection: ['stigs'] } as never,
+    },
+  })
+  if (!result.response.ok || !result.data) {
+    throw new Error(`asset ${assetId}: HTTP ${result.response.status}`)
+  }
+  return result.data as unknown as Asset
+}
+
+/**
+ * Payload for `POST /assets`. Mirrors `AssetCreateOrReplace`. Assets
+ * are scoped to a single Collection; `stigs` is the list of mapped
+ * benchmark ids.
+ */
+export type AssetForm = {
+  collectionId: string
+  name: string
+  description: string | null
+  fqdn?: string | null
+  ip: string | null
+  mac?: string | null
+  noncomputing: boolean
+  metadata?: Record<string, string>
+  stigs: string[]
+  labelNames?: string[]
+}
+
+export async function createAsset(input: AssetForm): Promise<Asset> {
+  const result = await apiClient.POST('/assets', {
+    body: input as never,
+  })
+  if (!result.response.ok || !result.data) {
+    throw new Error(`create asset: HTTP ${result.response.status}`)
+  }
+  return result.data as unknown as Asset
+}
+
+export type AssetUpdateInput = Partial<AssetForm> & { collectionId?: string }
+
+export async function updateAsset(
+  assetId: string,
+  input: AssetUpdateInput,
+): Promise<Asset> {
+  const result = await apiClient.PATCH('/assets/{assetId}', {
+    params: { path: { assetId } },
+    body: input as never,
+  })
+  if (!result.response.ok || !result.data) {
+    throw new Error(`update asset: HTTP ${result.response.status}`)
+  }
+  return result.data as unknown as Asset
+}
+
+export async function deleteAsset(assetId: string): Promise<Asset> {
+  const result = await apiClient.DELETE('/assets/{assetId}', {
+    params: { path: { assetId } },
+  })
+  if (!result.response.ok) {
+    throw new Error(`delete asset: HTTP ${result.response.status}`)
+  }
+  return result.data as unknown as Asset
+}
+
+/**
+ * STIGs currently mapped onto an Asset (with effective revision).
+ */
+export async function fetchAssetStigs(assetId: string): Promise<AssetStig[]> {
+  const result = await apiClient.GET('/assets/{assetId}/stigs', {
+    params: { path: { assetId } },
+  })
+  if (!result.response.ok || !result.data) {
+    throw new Error(`asset stigs: HTTP ${result.response.status}`)
+  }
+  return result.data as unknown as AssetStig[]
+}
+
+/**
+ * Rule record exposed by `GET /stigs/{benchmarkId}/revisions/{revisionStr}/rules`.
+ */
+export type Rule = {
+  ruleId: string
+  version: string
+  title: string
+  severity: string
+  groupId?: string
+  groupTitle?: string
+}
+
+export async function fetchRulesByRevision(
+  benchmarkId: string,
+  revisionStr: string,
+): Promise<Rule[]> {
+  const result = await apiClient.GET(
+    '/stigs/{benchmarkId}/revisions/{revisionStr}/rules',
+    { params: { path: { benchmarkId, revisionStr } } },
+  )
+  if (!result.response.ok || !result.data) {
+    throw new Error(`rules: HTTP ${result.response.status}`)
+  }
+  return result.data as unknown as Rule[]
+}
+
+/**
+ * Review row as returned by `GET /collections/{cid}/reviews/{aid}` and
+ * `GET /collections/{cid}/reviews/{aid}/{ruleId}` (latter returns one
+ * full record or 204).
+ */
+export type Review = {
+  ruleId?: string
+  ruleIds?: string[]
+  result: ReviewResult
+  detail: string
+  comment: string
+  status?: { label?: ReviewStatusLabel; text?: string | null; ts?: string; user?: { userId?: string; username?: string } }
+  ts?: string
+  touchTs?: string
+  userId?: string
+  username?: string
+  rule?: { ruleId?: string; version?: string; title?: string; severity?: string }
+}
+
+export type ReviewResult =
+  | 'fail'
+  | 'pass'
+  | 'notapplicable'
+  | 'notchecked'
+  | 'unknown'
+  | 'error'
+  | 'notselected'
+  | 'informational'
+  | 'fixed'
+
+export type ReviewStatusLabel = 'saved' | 'submitted' | 'accepted' | 'rejected'
+
+export async function fetchReviewsByAsset(
+  collectionId: string,
+  assetId: string,
+): Promise<Review[]> {
+  const result = await apiClient.GET(
+    '/collections/{collectionId}/reviews/{assetId}',
+    { params: { path: { collectionId, assetId } } },
+  )
+  if (!result.response.ok) {
+    throw new Error(`reviews: HTTP ${result.response.status}`)
+  }
+  return (result.data as unknown as Review[] | undefined) ?? []
+}
+
+export async function fetchReviewByAssetRule(
+  collectionId: string,
+  assetId: string,
+  ruleId: string,
+): Promise<Review | null> {
+  const result = await apiClient.GET(
+    '/collections/{collectionId}/reviews/{assetId}/{ruleId}',
+    { params: { path: { collectionId, assetId, ruleId } } },
+  )
+  // 204 No Content means there is no review yet for this rule.
+  if (result.response.status === 204) return null
+  if (!result.response.ok) {
+    throw new Error(`review: HTTP ${result.response.status}`)
+  }
+  return (result.data as unknown as Review | undefined) ?? null
+}
+
+export type ReviewPutInput = {
+  result: ReviewResult
+  detail: string
+  comment: string
+  status?: ReviewStatusLabel | { label: ReviewStatusLabel; text?: string | null }
+}
+
+export async function putReviewByAssetRule(
+  collectionId: string,
+  assetId: string,
+  ruleId: string,
+  body: ReviewPutInput,
+): Promise<Review> {
+  const result = await apiClient.PUT(
+    '/collections/{collectionId}/reviews/{assetId}/{ruleId}',
+    {
+      params: { path: { collectionId, assetId, ruleId } },
+      body: body as never,
+    },
+  )
+  if (!result.response.ok || !result.data) {
+    throw new Error(`put review: HTTP ${result.response.status}`)
+  }
+  return result.data as unknown as Review
+}
+
+/**
+ * Lists STIGs mapped in a Collection (with asset counts).
+ */
+export type CollectionStig = {
+  benchmarkId: string
+  revisionStr?: string
+  benchmarkDate?: string | null
+  revisionPinned?: boolean
+  ruleCount?: number | null
+  assetCount?: number | null
+  title?: string
+}
+
+export async function fetchCollectionStigs(
+  collectionId: string,
+): Promise<CollectionStig[]> {
+  const result = await apiClient.GET('/collections/{collectionId}/stigs', {
+    params: { path: { collectionId } },
+  })
+  if (!result.response.ok || !result.data) {
+    throw new Error(`collection stigs: HTTP ${result.response.status}`)
+  }
+  return result.data as unknown as CollectionStig[]
+}
