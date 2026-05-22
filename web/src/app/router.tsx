@@ -5,6 +5,7 @@ import { RequireScope } from './auth/require-scope'
 import { AppLayout } from './layout/app-layout'
 import { AdminLayout } from './pages/admin/admin-layout'
 import { AppInfoPage } from './pages/admin/app-info-page'
+import { AuditLogPage } from './pages/admin/audit-log-page'
 import { JobsPage } from './pages/admin/jobs-page'
 import { UserGroupsPage } from './pages/admin/user-groups-page'
 import { UsersPage } from './pages/admin/users-page'
@@ -118,6 +119,14 @@ export const router = createBrowserRouter([
             element: (
               <RequireScope scope="stig-manager:op:read">
                 <AppInfoPage />
+              </RequireScope>
+            ),
+          },
+          {
+            path: 'audit-log',
+            element: (
+              <RequireScope scope="stig-manager:op:read">
+                <AuditLogPage />
               </RequireScope>
             ),
           },

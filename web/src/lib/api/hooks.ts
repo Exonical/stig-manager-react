@@ -27,6 +27,7 @@ import {
   fetchAppDataTables,
   fetchAppInfo,
   fetchAppInfoDetail,
+  fetchAuditLog,
   fetchAsset,
   fetchAssets,
   fetchAssetStigs,
@@ -68,6 +69,8 @@ import {
   type AppDataTable,
   type AppInfo,
   type AppInfoDetail,
+  type AuditLogEntry,
+  type AuditLogFilter,
   type Asset,
   type AssetForm,
   type AssetStig,
@@ -119,6 +122,8 @@ import {
 export type {
   AppDataTable,
   AppInfoDetail,
+  AuditLogEntry,
+  AuditLogFilter,
   Asset,
   AssetForm,
   AssetStig,
@@ -207,6 +212,7 @@ export const QUERY_KEYS = {
   stig: (benchmarkId: string) => ['stig', benchmarkId] as const,
   rule: (ruleId: string) => ['rule', 'lookup', ruleId] as const,
   cci: (cci: string) => ['cci', cci] as const,
+  auditLog: (filter?: AuditLogFilter) => ['op', 'audit-log', filter ?? {}] as const,
 } as const
 
 export function useAppInfo(): UseQueryResult<AppInfo> {
@@ -922,5 +928,18 @@ export function useDeleteSTIG(): UseMutationResult<void, Error, string> {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['stigs'] })
     },
+  })
+}
+
+// ---- Audit Log (M19) --------------------------------------------------------
+
+export function useAuditLog(
+  filter?: AuditLogFilter,
+  options?: { refetchIntervalMs?: number },
+): UseQueryResult<AuditLogEntry[]> {
+  return useQuery({
+    queryKey: QUERY_KEYS.auditLog(filter),
+    queryFn: () => fetchAuditLog(filter),
+    refetchInterval: options?.refetchIntervalMs ?? false,
   })
 }

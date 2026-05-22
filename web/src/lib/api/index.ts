@@ -1593,3 +1593,73 @@ export async function deleteSTIG(benchmarkId: string): Promise<void> {
     throw new Error(`delete stig: HTTP ${result.response.status}`)
   }
 }
+
+// ---- Audit Log (M19) --------------------------------------------------------
+//
+// /api/op/audit-log is wired directly on the root chi router (it's not
+// part of the upstream OpenAPI surface), so this fetches with a plain
+// fetch() call instead of the typed openapi-fetch client.
+
+export type AuditLogEntry = {
+  auditId: number
+  ts: string
+  method: string
+  path: string
+  route?: string
+  status: number
+  durationMs: number
+  userId?: number | null
+  username?: string
+  subject?: string
+  ip?: string
+  requestId?: string
+  payload?: unknown
+  metadata?: unknown
+}
+
+export type AuditLogFilter = {
+  limit?: number
+  method?: string
+  path?: string
+  userId?: number
+  since?: string
+  until?: string
+}
+
+export async function fetchAuditLog(
+  filter?: AuditLogFilter,
+): Promise<AuditLogEntry[]> {
+  const url = new URL(`${API_BASE}/op/audit-log`, window.location.origin)
+  if (filter?.limit !== undefined) {
+    url.searchParams.set('limit', String(filter.limit))
+  }
+  if (filter?.method) url.searchParams.set('method', filter.method)
+  if (filter?.path) url.searchParams.set('path', filter.path)
+  if (filter?.userId !== undefined) {
+    url.searchParams.set('userId', String(filter.userId))
+  }
+  if (filter?.since) url.searchParams.set('since', filter.since)
+  if (filter?.until) url.searchParams.set('until', filter.until)
+
+  const headers: Record<string, string> = {}
+  const token = getAccessTokenForClient()
+  if (token) headers['Authorization'] = `Bearer ${token}`
+
+  const resp = await fetch(url.toString(), {
+    method: 'GET',
+    headers,
+    credentials: 'include',
+  })
+  if (!resp.ok) {
+    let detail = ''
+    try {
+      detail = (await resp.text()).slice(0, 256)
+    } catch {
+      // ignore body-read failure; we still have status
+    }
+    throw new Error(
+      `audit log: HTTP ${resp.status}${detail ? ` — ${detail}` : ''}`,
+    )
+  }
+  return (await resp.json()) as AuditLogEntry[]
+}
