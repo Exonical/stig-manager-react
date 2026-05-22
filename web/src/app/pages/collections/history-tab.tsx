@@ -346,9 +346,9 @@ function HistoryList({ rows }: { rows: ReviewHistoryAsset[] }) {
   const flat = rows.flatMap((asset) =>
     asset.reviewHistories.flatMap((rule) =>
       rule.history.map((h) => ({
+        ...h,
         assetId: asset.assetId,
         ruleId: rule.ruleId,
-        ...h,
       })),
     ),
   )
