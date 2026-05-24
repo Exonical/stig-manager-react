@@ -204,6 +204,16 @@ func New(opts Options) *Server {
 	// root chi router before the generated handlers are mounted.
 	r.Get("/api/op/audit-log", apiServer.GetAuditLog)
 
+	// /api/collections/{collectionId}/reviews/import is a multipart
+	// upload endpoint that accepts CKL / CKLB / XCCDF result files,
+	// resolves the implied (asset, ruleId) pairs, and applies them
+	// via ReviewRepo.Put. The OpenAPI spec only models reviews as
+	// JSON payloads — the upstream code base reaches the same
+	// behaviour via a separate jobs pipeline that this single-shot
+	// endpoint compresses into one request, so it lives off the
+	// generated router.
+	r.Post("/api/collections/{collectionId}/reviews/import", apiServer.ImportReviewsByCollection)
+
 	// Register the generated handlers directly onto the root chi router
 	// at /api/* so the existing middleware stack (RequestID, CORS, etc.)
 	// applies. This matches upstream's URL layout: paths in the OpenAPI

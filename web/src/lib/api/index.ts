@@ -1679,3 +1679,82 @@ export async function fetchAuditLog(
   }
   return (await resp.json()) as AuditLogEntry[]
 }
+
+// ---- File-based review imports (M22) --------------------------------------
+//
+// POST /api/collections/{cid}/reviews/import is a multipart endpoint
+// that accepts CKL/CKLB/XCCDF result files and either previews
+// (dryRun) or applies the implied (asset, ruleId) reviews. Wired off
+// the generated openapi client because the OpenAPI spec models
+// reviews as JSON only — see api/internal/server/reviews_import_handler.go.
+
+export type ReviewImportFileResult = {
+  filename: string
+  format: string
+  benchmarkId?: string
+  revision?: string
+  assetId?: number
+  assetName?: string
+  reviews: number
+  willInsert: number
+  willUpdate: number
+  inserted: number
+  updated: number
+  rejected?: { ruleId?: string; reason?: string }[]
+  error?: string
+}
+
+export type ReviewImportResponse = {
+  dryRun: boolean
+  files: ReviewImportFileResult[]
+  totals: {
+    reviews: number
+    willInsert: number
+    willUpdate: number
+    inserted: number
+    updated: number
+    rejected: number
+  }
+}
+
+export type ReviewImportInput = {
+  collectionId: string
+  files: File[]
+  dryRun?: boolean
+}
+
+export async function importReviews(
+  input: ReviewImportInput,
+): Promise<ReviewImportResponse> {
+  const url = new URL(
+    `${API_BASE}/collections/${input.collectionId}/reviews/import`,
+    window.location.origin,
+  )
+
+  const form = new FormData()
+  for (const f of input.files) form.append('files', f, f.name)
+  if (input.dryRun) form.append('dryRun', 'true')
+
+  const headers: Record<string, string> = {}
+  const token = getAccessTokenForClient()
+  if (token) headers['Authorization'] = `Bearer ${token}`
+
+  const resp = await fetch(url.toString(), {
+    method: 'POST',
+    headers,
+    body: form,
+    credentials: 'include',
+  })
+  if (!resp.ok) {
+    let detail = ''
+    try {
+      detail = (await resp.text()).slice(0, 512)
+    } catch {
+      // ignore body-read failure; we still have status
+    }
+    throw new Error(
+      `import reviews: HTTP ${resp.status}${detail ? ` — ${detail}` : ''}`,
+    )
+  }
+  return (await resp.json()) as ReviewImportResponse
+}
