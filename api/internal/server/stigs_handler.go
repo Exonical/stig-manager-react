@@ -1,9 +1,7 @@
 package server
 
 import (
-	"bytes"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -13,9 +11,10 @@ import (
 	"github.com/Exonical/stig-manager-react/api/internal/xccdf"
 )
 
-// importBenchmarkMaxBytes caps the size of an uploaded STIG XCCDF file.
-// Published DISA STIGs are well under 10 MiB; 64 MiB leaves comfortable
-// head-room without exposing the API to memory-exhaustion uploads.
+// importBenchmarkMaxBytes caps the size of an uploaded STIG XCCDF file
+// (or DISA zip bundle). Published DISA STIG zips are typically 1-5 MiB;
+// 64 MiB leaves comfortable head-room without exposing the API to
+// memory-exhaustion uploads.
 const importBenchmarkMaxBytes = 64 << 20
 
 // GetSTIGs lists imported STIG benchmarks. Supports a case-insensitive
@@ -98,38 +97,63 @@ func (s APIServer) ImportBenchmark(w http.ResponseWriter, r *http.Request, param
 		writeAuthError(w, http.StatusBadRequest, "failed to read upload: "+err.Error())
 		return
 	}
-	bench, err := xccdf.Parse(bytes.NewReader(buf))
+
+	// Accept raw XCCDF XML, a zip containing one or more *xccdf.xml
+	// files (the standard DISA STIG bundle layout), or a zip that
+	// itself contains a nested *xccdf.zip (the DISA STIG Library
+	// quarterly bundle).
+	extracted, err := xccdf.ExtractBenchmarks(buf)
 	if err != nil {
-		writeAuthError(w, http.StatusBadRequest, "invalid XCCDF: "+err.Error())
+		writeAuthError(w, http.StatusBadRequest, "invalid upload: "+err.Error())
 		return
 	}
 
 	clobber := params.Clobber != nil && *params.Clobber
-	rev, err := s.Stigs.ImportRevision(r.Context(), bench, clobber)
+
+	benches := make([]*xccdf.Benchmark, 0, len(extracted))
+	for _, ex := range extracted {
+		benches = append(benches, ex.Benchmark)
+	}
+
+	// All benchmarks are committed in a single transaction so a late-
+	// stage failure (e.g. duplicate revision without clobber) cannot
+	// leave the database in a half-imported state.
+	revs, err := s.Stigs.ImportRevisions(r.Context(), benches, clobber)
 	if err != nil {
 		if errors.Is(err, store.ErrDuplicateName) {
-			writeAuthError(w, http.StatusBadRequest, fmt.Sprintf(
-				"revision %s for %s already exists; pass ?clobber=true to overwrite",
-				bench.RevisionStr(), bench.BenchmarkID))
+			writeAuthError(w, http.StatusBadRequest,
+				"one or more revisions already exist; pass ?clobber=true to overwrite")
 			return
 		}
-		s.logErr(r, "import revision", err)
-		writeAuthError(w, http.StatusInternalServerError, "failed to import revision")
+		s.logErr(r, "import revisions", err)
+		writeAuthError(w, http.StatusInternalServerError, "failed to import upload")
 		return
 	}
 
-	action := api.RevisionPostAction("inserted")
-	bid := api.BenchmarkId(rev.BenchmarkID)
-	marking := api.RevisionMarkingNullable(rev.Marking)
-	resp := api.RevisionPost{
-		Action:      action,
-		BenchmarkId: &bid,
-		RevisionStr: api.RevisionStr(rev.RevisionStr),
+	imports := make([]api.RevisionPost, 0, len(revs))
+	for _, rev := range revs {
+		action := api.RevisionPostAction("inserted")
+		bid := api.BenchmarkId(rev.BenchmarkID)
+		marking := api.RevisionMarkingNullable(rev.Marking)
+		one := api.RevisionPost{
+			Action:      action,
+			BenchmarkId: &bid,
+			RevisionStr: api.RevisionStr(rev.RevisionStr),
+		}
+		if rev.Marking != "" {
+			one.Marking = &marking
+		}
+		imports = append(imports, one)
 	}
-	if rev.Marking != "" {
-		resp.Marking = &marking
+
+	// Single-XCCDF uploads keep the legacy RevisionPost shape so
+	// existing clients aren't broken; multi-XCCDF zips fan out to an
+	// array under the same status code.
+	if len(imports) == 1 {
+		writeJSON(w, http.StatusOK, imports[0])
+		return
 	}
-	writeJSON(w, http.StatusOK, resp)
+	writeJSON(w, http.StatusOK, imports)
 }
 
 // GetRuleByRuleId returns the projection for a Rule by its ruleId.

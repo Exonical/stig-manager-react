@@ -102,19 +102,61 @@ func NewSTIGRepo(pool *pgxpool.Pool) *STIGRepo {
 // Imports happen inside a single transaction so a partial failure leaves
 // the database untouched.
 func (r *STIGRepo) ImportRevision(ctx context.Context, b *xccdf.Benchmark, clobber bool) (*Revision, error) {
-	if b == nil {
-		return nil, errors.New("import: benchmark is nil")
+	revs, err := r.ImportRevisions(ctx, []*xccdf.Benchmark{b}, clobber)
+	if err != nil {
+		return nil, err
 	}
-	if b.BenchmarkID == "" {
-		return nil, errors.New("import: benchmark id is empty")
+	if len(revs) == 0 {
+		return nil, errors.New("import: no revision returned")
 	}
-	revStr := b.RevisionStr()
+	return revs[0], nil
+}
+
+// ImportRevisions imports a batch of XCCDF Benchmarks atomically: all
+// of them are written inside a single transaction, so any error rolls
+// the whole batch back. This is the path POST /stigs takes for multi-
+// XCCDF zip bundles (e.g. DISA STIG Library quarterly archives) so a
+// late-stage failure can't leave the database in a half-imported
+// state.
+func (r *STIGRepo) ImportRevisions(ctx context.Context, benches []*xccdf.Benchmark, clobber bool) ([]*Revision, error) {
+	if len(benches) == 0 {
+		return nil, errors.New("import: no benchmarks supplied")
+	}
+	for _, b := range benches {
+		if b == nil {
+			return nil, errors.New("import: benchmark is nil")
+		}
+		if b.BenchmarkID == "" {
+			return nil, errors.New("import: benchmark id is empty")
+		}
+	}
 
 	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("import begin tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+
+	revs := make([]*Revision, 0, len(benches))
+	for _, b := range benches {
+		rev, err := importRevisionTx(ctx, tx, b, clobber)
+		if err != nil {
+			return nil, err
+		}
+		revs = append(revs, rev)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("import commit: %w", err)
+	}
+	return revs, nil
+}
+
+// importRevisionTx writes a single Benchmark inside an already-open
+// transaction. Shared between ImportRevision (single) and
+// ImportRevisions (atomic batch).
+func importRevisionTx(ctx context.Context, tx pgx.Tx, b *xccdf.Benchmark, clobber bool) (*Revision, error) {
+	revStr := b.RevisionStr()
 
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO stig (benchmark_id, title) VALUES ($1, $2)
@@ -124,7 +166,7 @@ func (r *STIGRepo) ImportRevision(ctx context.Context, b *xccdf.Benchmark, clobb
 	}
 
 	var existingRev int64
-	err = tx.QueryRow(ctx, `
+	err := tx.QueryRow(ctx, `
 		SELECT revision_id FROM stig_revision
 		WHERE benchmark_id = $1 AND revision_str = $2
 	`, b.BenchmarkID, revStr).Scan(&existingRev)
@@ -190,10 +232,6 @@ func (r *STIGRepo) ImportRevision(ctx context.Context, b *xccdf.Benchmark, clobb
 				return nil, fmt.Errorf("link rule %s -> %s: %w", rule.RuleID, cci, err)
 			}
 		}
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("import commit: %w", err)
 	}
 
 	return &Revision{
