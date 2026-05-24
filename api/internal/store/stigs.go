@@ -51,20 +51,23 @@ type Revision struct {
 	ImportedAt    time.Time
 }
 
-// RuleProjection is the projection returned by STIGRepo.GetRuleByRuleId.
+// RuleProjection is the projection returned by STIGRepo.GetRuleByRuleId
+// and the per-revision rule lookups.
 type RuleProjection struct {
-	RuleID        string
-	VersionStr    string
-	Severity      string
-	Title         string
-	Description   string
-	CheckSystem   string
-	CheckContent  string
-	FixID         string
-	FixText       string
-	CCIs          []string
-	BenchmarkID   string
-	RevisionStr   string
+	RuleID       string
+	VersionStr   string
+	GroupID      string
+	GroupTitle   string
+	Severity     string
+	Title        string
+	Description  string
+	CheckSystem  string
+	CheckContent string
+	FixID        string
+	FixText      string
+	CCIs         []string
+	BenchmarkID  string
+	RevisionStr  string
 }
 
 // CCI is the projection returned by STIGRepo.GetCCI.
@@ -437,7 +440,8 @@ func (r *STIGRepo) GetByCollection(ctx context.Context, collectionID int64, benc
 // ruleId exists across multiple revisions.
 func (r *STIGRepo) GetRuleByRuleID(ctx context.Context, ruleID string) (*RuleProjection, error) {
 	const q = `
-		SELECT sr.rule_pk, sr.rule_id, sr.version_str, sr.severity, sr.title,
+		SELECT sr.rule_pk, sr.rule_id, sr.version_str, sr.group_id, sr.group_title,
+		       sr.severity, sr.title,
 		       sr.description, sr.check_system, sr.check_content, sr.fix_id, sr.fix_text,
 		       rv.benchmark_id, rv.revision_str
 		FROM stig_rule sr
@@ -450,7 +454,8 @@ func (r *STIGRepo) GetRuleByRuleID(ctx context.Context, ruleID string) (*RulePro
 		out    RuleProjection
 	)
 	err := r.pool.QueryRow(ctx, q, ruleID).Scan(
-		&rulePK, &out.RuleID, &out.VersionStr, &out.Severity, &out.Title,
+		&rulePK, &out.RuleID, &out.VersionStr, &out.GroupID, &out.GroupTitle,
+		&out.Severity, &out.Title,
 		&out.Description, &out.CheckSystem, &out.CheckContent, &out.FixID, &out.FixText,
 		&out.BenchmarkID, &out.RevisionStr,
 	)
@@ -479,6 +484,211 @@ func (r *STIGRepo) GetRuleByRuleID(ctx context.Context, ruleID string) (*RulePro
 		return nil, fmt.Errorf("rows cci: %w", err)
 	}
 	return &out, nil
+}
+
+// RulesByRevisionOptions controls which heavy projections
+// ListRulesByRevision / GetRuleByRevision load alongside the basic
+// rule fields.
+type RulesByRevisionOptions struct {
+	// IncludeCCIs joins stig_rule_cci so each row's CCIs are loaded.
+	IncludeCCIs bool
+	// IncludeDetail loads description / weight.
+	IncludeDetail bool
+	// IncludeCheck loads check_system / check_content.
+	IncludeCheck bool
+	// IncludeFix loads fix_id / fix_text.
+	IncludeFix bool
+}
+
+// resolveRevisionID resolves a (benchmarkId, revisionStr) pair to the
+// underlying revision_id. revisionStr == "latest" picks the largest
+// revision_id (most recently imported). Returns ErrNotFound when no
+// matching revision exists.
+func (r *STIGRepo) resolveRevisionID(ctx context.Context, benchmarkID, revisionStr string) (int64, string, error) {
+	var (
+		revisionID  int64
+		revStr      string
+		err         error
+	)
+	if revisionStr == "latest" {
+		err = r.pool.QueryRow(ctx, `
+			SELECT revision_id, revision_str FROM stig_revision
+			WHERE benchmark_id = $1
+			ORDER BY revision_id DESC
+			LIMIT 1
+		`, benchmarkID).Scan(&revisionID, &revStr)
+	} else {
+		err = r.pool.QueryRow(ctx, `
+			SELECT revision_id, revision_str FROM stig_revision
+			WHERE benchmark_id = $1 AND revision_str = $2
+		`, benchmarkID, revisionStr).Scan(&revisionID, &revStr)
+	}
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, "", ErrNotFound
+	}
+	if err != nil {
+		return 0, "", fmt.Errorf("resolve revision %s/%s: %w", benchmarkID, revisionStr, err)
+	}
+	return revisionID, revStr, nil
+}
+
+// ListRulesByRevision returns every rule in the named revision. When
+// revisionStr is "latest" the most-recently imported revision is
+// selected. CCIs / heavy fields are loaded only when the matching
+// projection is requested.
+func (r *STIGRepo) ListRulesByRevision(ctx context.Context, benchmarkID, revisionStr string, opt RulesByRevisionOptions) ([]RuleProjection, string, error) {
+	revisionID, resolvedRevStr, err := r.resolveRevisionID(ctx, benchmarkID, revisionStr)
+	if err != nil {
+		return nil, "", err
+	}
+
+	const q = `
+		SELECT sr.rule_pk, sr.rule_id, sr.version_str, sr.group_id, sr.group_title,
+		       sr.severity, sr.title, sr.description,
+		       sr.check_system, sr.check_content, sr.fix_id, sr.fix_text
+		FROM stig_rule sr
+		WHERE sr.revision_id = $1
+		ORDER BY sr.group_id, sr.rule_id`
+	rows, err := r.pool.Query(ctx, q, revisionID)
+	if err != nil {
+		return nil, "", fmt.Errorf("list rules by revision: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]RuleProjection, 0, 256)
+	indexByPK := make(map[int64]int, 256)
+	for rows.Next() {
+		var (
+			rulePK int64
+			rp     RuleProjection
+		)
+		if err := rows.Scan(
+			&rulePK, &rp.RuleID, &rp.VersionStr, &rp.GroupID, &rp.GroupTitle,
+			&rp.Severity, &rp.Title, &rp.Description,
+			&rp.CheckSystem, &rp.CheckContent, &rp.FixID, &rp.FixText,
+		); err != nil {
+			return nil, "", fmt.Errorf("scan rule: %w", err)
+		}
+		rp.BenchmarkID = benchmarkID
+		rp.RevisionStr = resolvedRevStr
+		indexByPK[rulePK] = len(out)
+		out = append(out, rp)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, "", fmt.Errorf("rows rule: %w", err)
+	}
+
+	if opt.IncludeCCIs && len(out) > 0 {
+		cciRows, err := r.pool.Query(ctx, `
+			SELECT src.rule_pk, src.cci
+			FROM stig_rule_cci src
+			JOIN stig_rule sr ON sr.rule_pk = src.rule_pk
+			WHERE sr.revision_id = $1
+			ORDER BY src.rule_pk, src.cci
+		`, revisionID)
+		if err != nil {
+			return nil, "", fmt.Errorf("list rule ccis: %w", err)
+		}
+		defer cciRows.Close()
+		for cciRows.Next() {
+			var (
+				rulePK int64
+				cci    string
+			)
+			if err := cciRows.Scan(&rulePK, &cci); err != nil {
+				return nil, "", fmt.Errorf("scan rule cci: %w", err)
+			}
+			if idx, ok := indexByPK[rulePK]; ok {
+				out[idx].CCIs = append(out[idx].CCIs, cci)
+			}
+		}
+		if err := cciRows.Err(); err != nil {
+			return nil, "", fmt.Errorf("rows rule cci: %w", err)
+		}
+	}
+
+	// When the caller didn't ask for heavy fields, zero them out so the
+	// API handler doesn't accidentally emit a payload bigger than the
+	// requested projection.
+	for i := range out {
+		if !opt.IncludeDetail {
+			out[i].Description = ""
+		}
+		if !opt.IncludeCheck {
+			out[i].CheckSystem = ""
+			out[i].CheckContent = ""
+		}
+		if !opt.IncludeFix {
+			out[i].FixID = ""
+			out[i].FixText = ""
+		}
+	}
+	return out, resolvedRevStr, nil
+}
+
+// GetRuleByRevision returns a single rule in the named revision.
+// "latest" is resolved the same way as ListRulesByRevision.
+func (r *STIGRepo) GetRuleByRevision(ctx context.Context, benchmarkID, revisionStr, ruleID string, opt RulesByRevisionOptions) (*RuleProjection, error) {
+	revisionID, resolvedRevStr, err := r.resolveRevisionID(ctx, benchmarkID, revisionStr)
+	if err != nil {
+		return nil, err
+	}
+	const q = `
+		SELECT sr.rule_pk, sr.rule_id, sr.version_str, sr.group_id, sr.group_title,
+		       sr.severity, sr.title, sr.description,
+		       sr.check_system, sr.check_content, sr.fix_id, sr.fix_text
+		FROM stig_rule sr
+		WHERE sr.revision_id = $1 AND sr.rule_id = $2
+		LIMIT 1`
+	var (
+		rulePK int64
+		rp     RuleProjection
+	)
+	err = r.pool.QueryRow(ctx, q, revisionID, ruleID).Scan(
+		&rulePK, &rp.RuleID, &rp.VersionStr, &rp.GroupID, &rp.GroupTitle,
+		&rp.Severity, &rp.Title, &rp.Description,
+		&rp.CheckSystem, &rp.CheckContent, &rp.FixID, &rp.FixText,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get rule by revision: %w", err)
+	}
+	rp.BenchmarkID = benchmarkID
+	rp.RevisionStr = resolvedRevStr
+
+	if opt.IncludeCCIs {
+		cciRows, err := r.pool.Query(ctx, `
+			SELECT cci FROM stig_rule_cci WHERE rule_pk = $1 ORDER BY cci
+		`, rulePK)
+		if err != nil {
+			return nil, fmt.Errorf("get rule ccis: %w", err)
+		}
+		defer cciRows.Close()
+		for cciRows.Next() {
+			var cci string
+			if err := cciRows.Scan(&cci); err != nil {
+				return nil, fmt.Errorf("scan cci: %w", err)
+			}
+			rp.CCIs = append(rp.CCIs, cci)
+		}
+		if err := cciRows.Err(); err != nil {
+			return nil, fmt.Errorf("rows cci: %w", err)
+		}
+	}
+	if !opt.IncludeDetail {
+		rp.Description = ""
+	}
+	if !opt.IncludeCheck {
+		rp.CheckSystem = ""
+		rp.CheckContent = ""
+	}
+	if !opt.IncludeFix {
+		rp.FixID = ""
+		rp.FixText = ""
+	}
+	return &rp, nil
 }
 
 // GetCCI returns a single CCI projection along with the STIGs that
