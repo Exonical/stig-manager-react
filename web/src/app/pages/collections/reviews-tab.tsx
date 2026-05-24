@@ -20,13 +20,11 @@
 // gating beyond the asset+rule cross-product) is intentionally
 // deferred for now; see the M18d PR for the rationale.
 //
-// Imports — CKL / CKLB / XCCDF upload + dry-run preview — are
-// deferred to a follow-up because they require either a client-side
-// parser bundle or a new server-side multipart endpoint (the
-// existing /collections/{cid}/reviews accepts JSON only). The "Imports"
-// sub-card here renders an explainer with that context.
+// Imports — CKL / CKLB / XCCDF upload + dry-run preview — land via
+// the M22 multipart endpoint POST /collections/{cid}/reviews/import.
+// The "Imports" sub-card on this tab drives that endpoint.
 
-import { Loader2, Send } from 'lucide-react'
+import { Loader2, Send, Upload } from 'lucide-react'
 import * as React from 'react'
 
 import { Button } from '@/components/ui/button'
@@ -38,12 +36,14 @@ import {
   useAssets,
   useCollectionStigs,
   useReviewBatch,
+  useReviewImport,
   type ReviewBatchInput,
   type ReviewBatchResponse,
   type ReviewBatchResponseDryRun,
   type ReviewResult,
   type ReviewStatusLabel,
 } from '@/lib/api/hooks'
+import type { ReviewImportResponse } from '@/lib/api'
 
 const RESULT_OPTIONS: ReviewResult[] = [
   'fail',
@@ -396,20 +396,7 @@ export function ReviewsTab({ collectionId, role }: ReviewsTabProps) {
         </CardContent>
       </Card>
 
-      <Card data-testid="collection-imports-card">
-        <CardHeader>
-          <CardTitle>Imports (CKL / CKLB / XCCDF)</CardTitle>
-          <p className="text-sm text-[var(--color-muted-foreground)]">
-            File-based imports are deferred to a follow-up milestone — they
-            require either client-side checklist parsing or a new server
-            multipart upload endpoint. The current API accepts JSON-only
-            review payloads via{' '}
-            <code>POST /collections/{'{'}cid{'}'}/reviews</code> and the
-            per-asset bulk endpoint, both of which the Batch Review form above
-            exercises.
-          </p>
-        </CardHeader>
-      </Card>
+      <ImportsCard collectionId={collectionId} canManage={canManage} />
     </div>
   )
 }
@@ -568,6 +555,251 @@ function BatchSummary({
           )}
         </ul>
       )}
+    </div>
+  )
+}
+
+// ImportsCard renders the M22 file-based review import form. It owns
+// its own File[] + dryRun state and exposes per-file diagnostics
+// returned by POST /collections/{cid}/reviews/import. Restricted to
+// Manage role on the collection.
+function ImportsCard({
+  collectionId,
+  canManage,
+}: {
+  collectionId: string
+  canManage: boolean
+}) {
+  const importMut = useReviewImport()
+  const [files, setFiles] = React.useState<File[]>([])
+  const [dryRun, setDryRun] = React.useState(true)
+  const [error, setError] = React.useState<string | null>(null)
+  const [lastResponse, setLastResponse] =
+    React.useState<ReviewImportResponse | null>(null)
+  const fileInputRef = React.useRef<HTMLInputElement | null>(null)
+
+  if (!canManage) {
+    return (
+      <Card data-testid="collection-imports-card">
+        <CardHeader>
+          <CardTitle>Imports (CKL / CKLB / XCCDF)</CardTitle>
+          <p className="text-sm text-[var(--color-muted-foreground)]">
+            File-based review import requires the{' '}
+            <span className="font-medium">Manage</span> role on this
+            Collection.
+          </p>
+        </CardHeader>
+      </Card>
+    )
+  }
+
+  function submit(dry: boolean) {
+    setError(null)
+    setLastResponse(null)
+    if (files.length === 0) {
+      setError('Pick at least one .ckl, .cklb, or .xccdf file to import.')
+      return
+    }
+    importMut.mutate(
+      { collectionId, files, dryRun: dry },
+      {
+        onSuccess: (data) => {
+          setLastResponse(data)
+        },
+        onError: (err) => {
+          setError(err instanceof Error ? err.message : String(err))
+        },
+      },
+    )
+  }
+
+  return (
+    <Card data-testid="collection-imports-card">
+      <CardHeader>
+        <CardTitle>Imports (CKL / CKLB / XCCDF)</CardTitle>
+        <p className="text-sm text-[var(--color-muted-foreground)]">
+          Upload one or more DISA checklist files. Each file is mapped to an
+          existing asset in this collection by hostname, FQDN, MAC, or IP. Use
+          dry-run to preview counts before applying.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="space-y-2">
+          <Label htmlFor="reviews-import-files">Files</Label>
+          <input
+            ref={fileInputRef}
+            id="reviews-import-files"
+            type="file"
+            multiple
+            accept=".ckl,.cklb,.xml,.xccdf,.xccdf.xml"
+            data-testid="reviews-import-files"
+            className="block w-full text-sm"
+            onChange={(e) => {
+              const list = e.target.files
+              setFiles(list ? Array.from(list) : [])
+              setError(null)
+            }}
+          />
+          {files.length > 0 && (
+            <ul
+              className="space-y-1 text-xs text-[var(--color-muted-foreground)]"
+              data-testid="reviews-import-files-list"
+            >
+              {files.map((f) => (
+                <li key={f.name}>
+                  {f.name} <span className="opacity-70">({f.size} B)</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="flex items-center gap-2 text-sm">
+            <Input
+              type="checkbox"
+              checked={dryRun}
+              onChange={(e) => setDryRun(e.target.checked)}
+              className="size-4"
+              data-testid="reviews-import-dryrun"
+            />
+            Dry-run (preview only)
+          </label>
+        </div>
+
+        {error && (
+          <p
+            className="rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-500"
+            data-testid="reviews-import-error"
+          >
+            {error}
+          </p>
+        )}
+
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            disabled={importMut.isPending || files.length === 0}
+            onClick={() => submit(true)}
+            data-testid="reviews-import-dryrun-btn"
+          >
+            {importMut.isPending && dryRun ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Upload className="size-4" />
+            )}
+            Dry-run
+          </Button>
+          <Button
+            type="button"
+            disabled={importMut.isPending || files.length === 0}
+            onClick={() => submit(false)}
+            data-testid="reviews-import-apply-btn"
+          >
+            {importMut.isPending && !dryRun ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Upload className="size-4" />
+            )}
+            Apply
+          </Button>
+        </div>
+
+        {lastResponse && (
+          <ImportResultPanel response={lastResponse} />
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function ImportResultPanel({ response }: { response: ReviewImportResponse }) {
+  const t = response.totals
+  return (
+    <div className="space-y-3" data-testid="reviews-import-result">
+      <div className="flex flex-wrap gap-2 text-sm">
+        <span className="rounded-md bg-[var(--color-muted)]/40 px-2 py-1">
+          {response.dryRun ? 'Dry-run preview' : 'Applied'}
+        </span>
+        {response.dryRun ? (
+          <>
+            <span data-testid="reviews-import-total-willInsert">
+              Will insert: {t.willInsert}
+            </span>
+            <span data-testid="reviews-import-total-willUpdate">
+              Will update: {t.willUpdate}
+            </span>
+          </>
+        ) : (
+          <>
+            <span data-testid="reviews-import-total-inserted">
+              Inserted: {t.inserted}
+            </span>
+            <span data-testid="reviews-import-total-updated">
+              Updated: {t.updated}
+            </span>
+          </>
+        )}
+        <span data-testid="reviews-import-total-rejected">
+          Rejected: {t.rejected}
+        </span>
+      </div>
+      <table
+        className="w-full border-collapse text-xs"
+        data-testid="reviews-import-files-table"
+      >
+        <thead>
+          <tr className="text-left text-[var(--color-muted-foreground)]">
+            <th className="border-b border-[var(--color-border)] py-1">File</th>
+            <th className="border-b border-[var(--color-border)] py-1">
+              Format
+            </th>
+            <th className="border-b border-[var(--color-border)] py-1">
+              Asset
+            </th>
+            <th className="border-b border-[var(--color-border)] py-1">
+              Reviews
+            </th>
+            <th className="border-b border-[var(--color-border)] py-1">
+              {response.dryRun ? 'Will insert' : 'Inserted'}
+            </th>
+            <th className="border-b border-[var(--color-border)] py-1">
+              {response.dryRun ? 'Will update' : 'Updated'}
+            </th>
+            <th className="border-b border-[var(--color-border)] py-1">
+              Status
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {response.files.map((f, idx) => (
+            <tr key={`${f.filename}-${idx}`}>
+              <td className="border-b border-[var(--color-border)] py-1">
+                {f.filename}
+              </td>
+              <td className="border-b border-[var(--color-border)] py-1">
+                {f.format}
+              </td>
+              <td className="border-b border-[var(--color-border)] py-1">
+                {f.assetName ?? '—'}
+              </td>
+              <td className="border-b border-[var(--color-border)] py-1">
+                {f.reviews}
+              </td>
+              <td className="border-b border-[var(--color-border)] py-1">
+                {response.dryRun ? f.willInsert : f.inserted}
+              </td>
+              <td className="border-b border-[var(--color-border)] py-1">
+                {response.dryRun ? f.willUpdate : f.updated}
+              </td>
+              <td className="border-b border-[var(--color-border)] py-1 text-red-500">
+                {f.error ?? ''}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   )
 }

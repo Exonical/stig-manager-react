@@ -1,9 +1,12 @@
 import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import { expect, test } from '@playwright/test'
 
 import { urls } from '../playwright.config'
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
 
 // Read the access_token from the SPA's oidc-client-ts localStorage
 // blob. Mirrors the helper in api.spec.ts.
@@ -281,6 +284,65 @@ test.describe('Web SPA', () => {
     await expect(page.getByTestId('batch-count-insert')).toContainText(
       /Will insert: 0/,
     )
+  })
+
+  test('file-based review import: CKL dry-run surfaces willInsert > 0 (M22)', async ({
+    page,
+  }) => {
+    await page.goto(`${urls.web}/collections`)
+    const collectionName = `e2e-import-coll-${Date.now()}`
+    await page.getByTestId('new-collection-button').click()
+    const cdialog = page.getByTestId('new-collection-dialog')
+    await cdialog.getByTestId('new-collection-name-input').fill(collectionName)
+    await cdialog.getByTestId('new-collection-submit').click()
+    await expect(page).toHaveURL(/\/collections\/\d+$/, { timeout: 10_000 })
+
+    // Create an asset whose name matches the CKL fixture's HOST_NAME so
+    // the asset-resolution path lands on a row.
+    await page.getByTestId('collection-tab-assets').click()
+    await page.getByTestId('new-asset-button').click()
+    const adialog = page.getByTestId('new-asset-dialog')
+    await adialog.getByTestId('asset-name-input').fill('host-ckl-1')
+    await adialog.getByTestId('new-asset-submit').click()
+    await expect(page).toHaveURL(/\/collections\/\d+\/assets\/\d+$/, {
+      timeout: 10_000,
+    })
+
+    // Back to the Collection and open the Reviews tab.
+    await page.getByRole('link', { name: /back to/i }).click()
+    await expect(page.getByTestId('collection-detail-page')).toBeVisible()
+    await page.getByTestId('collection-tab-reviews').click()
+    await expect(page.getByTestId('collection-reviews-tab')).toBeVisible()
+    await expect(page.getByTestId('collection-imports-card')).toBeVisible()
+
+    // Read the CKL fixture from the API source tree and upload it.
+    const ckl = readFileSync(
+      join(
+        __dirname,
+        '..',
+        '..',
+        'api',
+        'internal',
+        'checklist',
+        'testdata',
+        'sample.ckl',
+      ),
+    )
+    await page
+      .getByTestId('reviews-import-files')
+      .setInputFiles([{ name: 'host-ckl-1.ckl', mimeType: 'application/xml', buffer: ckl }])
+
+    // Default dryRun=true; click the Dry-run button to fire the request.
+    await page.getByTestId('reviews-import-dryrun-btn').click()
+    await expect(page.getByTestId('reviews-import-result')).toBeVisible({
+      timeout: 10_000,
+    })
+    await expect(
+      page.getByTestId('reviews-import-total-willInsert'),
+    ).toContainText(/Will insert: [1-9]/)
+    await expect(
+      page.getByTestId('reviews-import-files-table'),
+    ).toContainText('host-ckl-1')
   })
 
   test('admin layout renders with the four tabs (M18f)', async ({ page }) => {

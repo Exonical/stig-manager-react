@@ -58,6 +58,7 @@ import {
   fetchUserGroups,
   fetchUsers,
   importBenchmark,
+  importReviews,
   postCollectionGrants,
   postReviewBatch,
   putCollectionGrant,
@@ -485,6 +486,26 @@ export function useReviewBatch(): UseMutationResult<
       // or more assets — invalidate the list view conservatively.
       if (body.dryRun) return
       void qc.invalidateQueries({ queryKey: ['reviews', collectionId] })
+    },
+  })
+}
+
+// File-based review imports (M22). The mutation invalidates the
+// per-collection reviews cache on a successful (non-dry-run) apply so
+// the M18c rule list and the M18d batch form both see the new rows.
+export function useReviewImport(): UseMutationResult<
+  import('./index').ReviewImportResponse,
+  Error,
+  import('./index').ReviewImportInput
+> {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input) => importReviews(input),
+    onSuccess: (data, input) => {
+      if (data.dryRun) return
+      void qc.invalidateQueries({
+        queryKey: ['reviews', input.collectionId],
+      })
     },
   })
 }
