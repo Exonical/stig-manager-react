@@ -432,6 +432,72 @@ test.describe('Web SPA', () => {
     await expect(page.getByTestId('workspace-search')).toBeFocused()
   })
 
+  test('collection workspace renders 3-region layout with assets + STIGs tables (M24)', async ({
+    page,
+  }) => {
+    // Create a fresh collection through the dialog. This lands on the
+    // legacy detail page, which is fine — we navigate to the workspace
+    // explicitly below.
+    await page.goto(`${urls.web}/collections`)
+    const collectionName = `e2e-cw-coll-${Date.now()}`
+    await page.getByTestId('new-collection-button').click()
+    const cdialog = page.getByTestId('new-collection-dialog')
+    await cdialog.getByTestId('new-collection-name-input').fill(collectionName)
+    await cdialog.getByTestId('new-collection-submit').click()
+    await expect(page).toHaveURL(/\/collections\/\d+$/, { timeout: 10_000 })
+    const collectionId = page.url().match(/\/collections\/(\d+)/)?.[1]
+    expect(collectionId).toBeTruthy()
+
+    // Hop to the workspace.
+    await page.goto(`${urls.web}/collections/${collectionId}/workspace`)
+    await expect(page.getByTestId('collection-workspace')).toBeVisible()
+    await expect(page.getByTestId('workspace-collection-name')).toHaveText(
+      collectionName,
+    )
+    // The owner role badge surfaces because the creating user is the
+    // collection owner.
+    await expect(page.getByTestId('workspace-role-badge')).toContainText(
+      /owner/i,
+    )
+
+    // Manage panel + tabs render with Grants selected by default.
+    await expect(page.getByTestId('workspace-manage-panel')).toBeVisible()
+    await expect(page.getByTestId('manage-tab-grants')).toBeVisible()
+    await expect(page.getByTestId('manage-tab-labels')).toBeVisible()
+
+    // Both metrics tables are rendered.
+    const assetsTable = page.getByTestId('workspace-assets-table')
+    const stigsTable = page.getByTestId('workspace-stigs-table')
+    await expect(assetsTable).toBeVisible()
+    await expect(stigsTable).toBeVisible()
+    // Empty state copy on both tables (fresh collection has neither
+    // assets nor STIGs yet).
+    await expect(
+      assetsTable.getByText(/no assets yet/i),
+    ).toBeVisible({ timeout: 10_000 })
+    await expect(
+      stigsTable.getByText(/no stigs assigned yet/i),
+    ).toBeVisible({ timeout: 10_000 })
+
+    // Bulk-delete on the Assets toolbar is disabled while nothing is
+    // selected; the Create button is enabled for the owner.
+    await expect(page.getByTestId('assets-toolbar-create')).toBeEnabled()
+    await expect(page.getByTestId('assets-toolbar-delete')).toBeDisabled()
+
+    // The Collections list now defaults its row link to the workspace
+    // route.
+    await page.goto(`${urls.web}/collections`)
+    const row = page.getByTestId(`collection-link-${collectionId}`)
+    await expect(row).toHaveAttribute(
+      'href',
+      `/collections/${collectionId}/workspace`,
+    )
+    // The legacy detail link remains reachable from the list.
+    await expect(
+      page.getByTestId(`collection-detail-link-${collectionId}`),
+    ).toHaveAttribute('href', `/collections/${collectionId}`)
+  })
+
   test('admin layout renders with the four tabs (M18f)', async ({ page }) => {
     await page.goto(`${urls.web}/admin/users`)
     await expect(page.getByTestId('admin-layout')).toBeVisible()

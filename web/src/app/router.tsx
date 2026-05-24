@@ -14,6 +14,7 @@ import { ReviewEditorPage } from './pages/assets/review-editor'
 import { AssetReviewWorkspacePage } from './pages/assets/workspace'
 import { CollectionDetailPage } from './pages/collections/detail'
 import { CollectionsListPage } from './pages/collections/list'
+import { CollectionWorkspacePage } from './pages/collections/workspace'
 import { DashboardPage } from './pages/dashboard'
 import { LibraryDetailPage } from './pages/library/detail'
 import { LibraryListPage } from './pages/library/list'
@@ -47,6 +48,14 @@ export const router = createBrowserRouter([
         element: (
           <RequireScope scope="stig-manager:collection:read">
             <CollectionDetailPage />
+          </RequireScope>
+        ),
+      },
+      {
+        path: 'collections/:collectionId/workspace',
+        element: (
+          <RequireScope scope="stig-manager:collection:read">
+            <CollectionWorkspacePage />
           </RequireScope>
         ),
       },
