@@ -390,19 +390,9 @@ test.describe('Web SPA', () => {
     const collectionId = page.url().match(/\/collections\/(\d+)/)?.[1]
     expect(collectionId).toBeTruthy()
 
-    // Assign the imported benchmark to the collection so it's
-    // selectable on the create-asset form.
-    const grantResp = await request.put(
-      `${urls.api}/api/collections/${collectionId}/stigs/TEST_OS_STIG/assets`,
-      {
-        headers: { Authorization: `Bearer ${token}` },
-        data: [],
-      },
-    )
-    expect(grantResp.status(), await grantResp.text()).toBeLessThan(500)
-
-    // Create an asset with the STIG mapped via the form (assetIds
-    // unknown until creation, so we use the form's stigs field).
+    // Create an asset. The dialog's STIG checkbox is sourced from
+    // `useSTIGs()` (library-wide) so TEST_OS_STIG will be selectable
+    // once the import above completes.
     await page.getByTestId('collection-tab-assets').click()
     await page.getByTestId('new-asset-button').click()
     const adialog = page.getByTestId('new-asset-dialog')
