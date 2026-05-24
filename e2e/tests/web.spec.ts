@@ -1,9 +1,12 @@
 import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import { expect, test } from '@playwright/test'
 
 import { urls } from '../playwright.config'
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
 
 // Read the access_token from the SPA's oidc-client-ts localStorage
 // blob. Mirrors the helper in api.spec.ts.
