@@ -11,6 +11,7 @@ import { UserGroupsPage } from './pages/admin/user-groups-page'
 import { UsersPage } from './pages/admin/users-page'
 import { AssetDetailPage } from './pages/assets/detail'
 import { ReviewEditorPage } from './pages/assets/review-editor'
+import { AssetReviewWorkspacePage } from './pages/assets/workspace'
 import { CollectionDetailPage } from './pages/collections/detail'
 import { CollectionsListPage } from './pages/collections/list'
 import { DashboardPage } from './pages/dashboard'
@@ -54,6 +55,14 @@ export const router = createBrowserRouter([
         element: (
           <RequireScope scope="stig-manager:collection:read">
             <AssetDetailPage />
+          </RequireScope>
+        ),
+      },
+      {
+        path: 'collections/:collectionId/assets/:assetId/workspace',
+        element: (
+          <RequireScope scope="stig-manager:collection:read">
+            <AssetReviewWorkspacePage />
           </RequireScope>
         ),
       },

@@ -5,7 +5,7 @@
 // to show its rules + each rule's current review result. Clicking a
 // rule navigates to the single-rule review editor.
 
-import { ArrowLeft, Loader2, Pencil, Trash2 } from 'lucide-react'
+import { ArrowLeft, ClipboardCheck, Loader2, Pencil, Trash2 } from 'lucide-react'
 import * as React from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 
@@ -122,26 +122,39 @@ export function AssetDetailPage() {
             </p>
           )}
         </div>
-        {canEdit && (
-          <div className="flex gap-2">
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => setEditOpen(true)}
-              data-testid="asset-edit-button"
+        <div className="flex flex-wrap gap-2">
+          <Button
+            asChild
+            size="sm"
+            data-testid="asset-open-workspace"
+          >
+            <Link
+              to={`/collections/${collectionId}/assets/${assetId}/workspace`}
             >
-              <Pencil className="size-4" /> Edit
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => setConfirmDelete(true)}
-              data-testid="asset-delete-button"
-            >
-              <Trash2 className="size-4" /> Delete
-            </Button>
-          </div>
-        )}
+              <ClipboardCheck className="size-4" /> Open Review Workspace
+            </Link>
+          </Button>
+          {canEdit && (
+            <>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setEditOpen(true)}
+                data-testid="asset-edit-button"
+              >
+                <Pencil className="size-4" /> Edit
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setConfirmDelete(true)}
+                data-testid="asset-delete-button"
+              >
+                <Trash2 className="size-4" /> Delete
+              </Button>
+            </>
+          )}
+        </div>
       </header>
 
       <div className="grid gap-4 md:grid-cols-2">
