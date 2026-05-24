@@ -186,6 +186,95 @@ func TestSTIGsHTTPFlow(t *testing.T) {
 		t.Fatalf("rule severity: %v", ruleBody["severity"])
 	}
 
+	// GET /stigs/{benchmarkId}/revisions/{revisionStr}/rules → 200 +
+	// array of rules. Default (no projection) returns the basics only.
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/api/stigs/TEST_OS_STIG/revisions/V2R3/rules", nil)
+	req.Header.Set("Authorization", "Bearer "+fx.token(t, "stig-manager:stig:read"))
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list rules: got %d (body=%s)", rec.Code, rec.Body.String())
+	}
+	var rulesArr []map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &rulesArr); err != nil {
+		t.Fatalf("rules json: %v", err)
+	}
+	if len(rulesArr) == 0 {
+		t.Fatalf("expected at least one rule, got 0")
+	}
+	first := rulesArr[0]
+	if first["ruleId"] == nil || first["severity"] == nil {
+		t.Fatalf("rule row missing ruleId/severity: %+v", first)
+	}
+	// Default projection must NOT include heavy fields.
+	if _, has := first["check"]; has {
+		t.Fatalf("default projection unexpectedly includes check: %+v", first)
+	}
+	if _, has := first["detail"]; has {
+		t.Fatalf("default projection unexpectedly includes detail: %+v", first)
+	}
+
+	// With ?projection=check&projection=detail&projection=ccis the
+	// heavy fields show up.
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet,
+		"/api/stigs/TEST_OS_STIG/revisions/V2R3/rules?projection=check&projection=detail&projection=ccis",
+		nil)
+	req.Header.Set("Authorization", "Bearer "+fx.token(t, "stig-manager:stig:read"))
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list rules proj: got %d (body=%s)", rec.Code, rec.Body.String())
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &rulesArr); err != nil {
+		t.Fatalf("rules proj json: %v", err)
+	}
+	gotCheck := false
+	for _, row := range rulesArr {
+		if _, has := row["check"]; has {
+			gotCheck = true
+			break
+		}
+	}
+	if !gotCheck {
+		t.Fatalf("expected at least one rule with check: %+v", rulesArr)
+	}
+
+	// "latest" resolves to the most-recent imported revision.
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/api/stigs/TEST_OS_STIG/revisions/latest/rules", nil)
+	req.Header.Set("Authorization", "Bearer "+fx.token(t, "stig-manager:stig:read"))
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list rules latest: got %d (body=%s)", rec.Code, rec.Body.String())
+	}
+
+	// GET /stigs/{bid}/revisions/{rev}/rules/{ruleId} → 200.
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet,
+		"/api/stigs/TEST_OS_STIG/revisions/V2R3/rules/SV-100001r1_rule?projection=check&projection=fix",
+		nil)
+	req.Header.Set("Authorization", "Bearer "+fx.token(t, "stig-manager:stig:read"))
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("get rule by revision: got %d (body=%s)", rec.Code, rec.Body.String())
+	}
+	var ruleByRevBody map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &ruleByRevBody); err != nil {
+		t.Fatalf("rule by revision json: %v", err)
+	}
+	if ruleByRevBody["ruleId"] != "SV-100001r1_rule" {
+		t.Fatalf("rule by revision ruleId: %v", ruleByRevBody["ruleId"])
+	}
+
+	// Unknown revision → 404.
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/api/stigs/TEST_OS_STIG/revisions/V99R99/rules", nil)
+	req.Header.Set("Authorization", "Bearer "+fx.token(t, "stig-manager:stig:read"))
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("unknown revision: got %d", rec.Code)
+	}
+
 	// GET /stigs/ccis/{cci} → 200 + cci with stigs[]. The OpenAPI spec
 	// accepts six digits with no prefix; the handler normalises.
 	rec = httptest.NewRecorder()

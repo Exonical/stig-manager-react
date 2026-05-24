@@ -175,7 +175,108 @@ func (s APIServer) GetRuleByRuleId(w http.ResponseWriter, r *http.Request, ruleI
 		writeAuthError(w, http.StatusInternalServerError, "failed to get rule")
 		return
 	}
-	writeJSON(w, http.StatusOK, ruleToAPI(*row))
+	// The /stigs/rules/{ruleId} lookup card always wants the full set.
+	writeJSON(w, http.StatusOK, ruleToAPIWith(*row, ruleProjFull))
+}
+
+// ruleProjSet is a parsed view of the ?projection query.
+type ruleProjSet struct {
+	Detail bool
+	Check  bool
+	Fix    bool
+	CCIs   bool
+	Stigs  bool
+}
+
+// ruleProjFull is the projection requested by the /stigs/rules/{ruleId}
+// lookup card (everything except the cross-revision Stigs nav list).
+var ruleProjFull = ruleProjSet{Detail: true, Check: true, Fix: true, CCIs: true, Stigs: true}
+
+// parseRuleProjection turns a *RuleProjectionQuery (which is *[]string
+// underneath) into a parsed flag set.
+func parseRuleProjection(q *api.RuleProjectionQuery) ruleProjSet {
+	out := ruleProjSet{}
+	if q == nil {
+		return out
+	}
+	for _, p := range *q {
+		switch p {
+		case "detail":
+			out.Detail = true
+		case "check":
+			out.Check = true
+		case "fix":
+			out.Fix = true
+		case "ccis":
+			out.CCIs = true
+		case "stigs":
+			out.Stigs = true
+		}
+	}
+	return out
+}
+
+// GetRulesByRevision returns all rules for a given (benchmarkId,
+// revisionStr) pair. revisionStr may be "latest" to select the most
+// recently imported revision.
+func (s APIServer) GetRulesByRevision(w http.ResponseWriter, r *http.Request, benchmarkId string, revisionStr string, params api.GetRulesByRevisionParams) {
+	if !s.requiredScope(w, r, "stig-manager:stig:read") {
+		return
+	}
+	if s.Stigs == nil {
+		writeAuthError(w, http.StatusNotFound, "revision not found")
+		return
+	}
+	proj := parseRuleProjection(params.Projection)
+	rows, _, err := s.Stigs.ListRulesByRevision(r.Context(), benchmarkId, revisionStr, store.RulesByRevisionOptions{
+		IncludeCCIs:   proj.CCIs,
+		IncludeDetail: proj.Detail,
+		IncludeCheck:  proj.Check,
+		IncludeFix:    proj.Fix,
+	})
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeAuthError(w, http.StatusNotFound, "revision not found")
+			return
+		}
+		s.logErr(r, "list rules by revision", err)
+		writeAuthError(w, http.StatusInternalServerError, "failed to list rules")
+		return
+	}
+	out := make([]api.RuleProjected, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, ruleToAPIWith(row, proj))
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// GetRuleByRevision returns a single rule projection scoped to a
+// specific (benchmarkId, revisionStr).
+func (s APIServer) GetRuleByRevision(w http.ResponseWriter, r *http.Request, benchmarkId string, revisionStr string, ruleId string, params api.GetRuleByRevisionParams) {
+	if !s.requiredScope(w, r, "stig-manager:stig:read") {
+		return
+	}
+	if s.Stigs == nil {
+		writeAuthError(w, http.StatusNotFound, "rule not found")
+		return
+	}
+	proj := parseRuleProjection(params.Projection)
+	row, err := s.Stigs.GetRuleByRevision(r.Context(), benchmarkId, revisionStr, ruleId, store.RulesByRevisionOptions{
+		IncludeCCIs:   proj.CCIs,
+		IncludeDetail: proj.Detail,
+		IncludeCheck:  proj.Check,
+		IncludeFix:    proj.Fix,
+	})
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeAuthError(w, http.StatusNotFound, "rule not found")
+			return
+		}
+		s.logErr(r, "get rule by revision", err)
+		writeAuthError(w, http.StatusInternalServerError, "failed to get rule")
+		return
+	}
+	writeJSON(w, http.StatusOK, ruleToAPIWith(*row, proj))
 }
 
 // GetCci returns a single CCI projection plus the STIGs that reference
@@ -233,14 +334,15 @@ func storeToAPIStig(row store.STIG, withRevisions bool) api.STIG {
 	return out
 }
 
-// ruleToAPI projects a store.RuleProjection into the OpenAPI
-// RuleProjected schema returned by GET /stigs/rules/{ruleId}.
-func ruleToAPI(row store.RuleProjection) api.RuleProjected {
+// ruleToAPIWith projects a store.RuleProjection into the OpenAPI
+// RuleProjected schema, only emitting the heavy fields the caller
+// asked for via ?projection.
+func ruleToAPIWith(row store.RuleProjection, proj ruleProjSet) api.RuleProjected {
 	rid := api.RuleId(row.RuleID)
 	title := api.RuleTitle(row.Title)
 	version := api.VersionString(row.VersionStr)
-	groupID := api.GroupId(row.RevisionStr)
-	groupTitle := api.GroupTitle("")
+	groupID := api.GroupId(row.GroupID)
+	groupTitle := api.GroupTitle(row.GroupTitle)
 
 	out := api.RuleProjected{
 		RuleId:     &rid,
@@ -251,26 +353,26 @@ func ruleToAPI(row store.RuleProjection) api.RuleProjected {
 		GroupTitle: &groupTitle,
 	}
 
-	if row.CheckContent != "" || row.CheckSystem != "" {
+	if proj.Check && (row.CheckContent != "" || row.CheckSystem != "") {
 		out.Check = &api.Check{
 			Content: strPtr(row.CheckContent),
 			System:  strPtr(row.CheckSystem),
 		}
 	}
-	if row.FixText != "" || row.FixID != "" {
+	if proj.Fix && (row.FixText != "" || row.FixID != "") {
 		out.Fix = &api.Fix{
 			Text:   strPtr(row.FixText),
 			Fixref: strPtr(row.FixID),
 		}
 	}
-	if len(row.CCIs) > 0 {
+	if proj.CCIs && len(row.CCIs) > 0 {
 		basics := make([]api.CciBasic, 0, len(row.CCIs))
 		for _, cci := range row.CCIs {
 			basics = append(basics, api.CciBasic{Cci: api.CciString(cci)})
 		}
 		out.Ccis = &basics
 	}
-	if row.Description != "" {
+	if proj.Detail && row.Description != "" {
 		// Embed the raw VulnDiscussion blob under detail.vulnDiscussion;
 		// fine-grained parsing of the DISA pseudo-XML lives behind the
 		// review-content milestone.
@@ -289,7 +391,7 @@ func ruleToAPI(row store.RuleProjection) api.RuleProjected {
 			Weight                   *string `json:"weight,omitempty"`
 		}{VulnDiscussion: &desc}
 	}
-	if row.BenchmarkID != "" {
+	if proj.Stigs && row.BenchmarkID != "" {
 		bid := api.BenchmarkId(row.BenchmarkID)
 		out.Stigs = &[]api.RevisionBasic{{
 			BenchmarkId: &bid,

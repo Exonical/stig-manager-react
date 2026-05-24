@@ -1,6 +1,27 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+
 import { expect, test } from '@playwright/test'
 
 import { urls } from '../playwright.config'
+
+// Read the access_token from the SPA's oidc-client-ts localStorage
+// blob. Mirrors the helper in api.spec.ts.
+async function readAccessToken(
+  page: import('@playwright/test').Page,
+): Promise<string> {
+  return await page.evaluate(() => {
+    for (let i = 0; i < window.localStorage.length; i++) {
+      const k = window.localStorage.key(i) ?? ''
+      if (k.startsWith('oidc.user:')) {
+        const raw = window.localStorage.getItem(k) ?? '{}'
+        const u = JSON.parse(raw) as { access_token?: string }
+        if (u.access_token) return u.access_token
+      }
+    }
+    throw new Error('no oidc.user:* record in localStorage')
+  })
+}
 
 test.describe('Web SPA', () => {
   test('renders the app shell when signed in', async ({ page }) => {
@@ -424,6 +445,71 @@ test.describe('Web SPA', () => {
     await expect(dialog.getByTestId('import-clobber-checkbox')).toBeVisible()
     // Submit is disabled until a file is chosen.
     await expect(dialog.getByTestId('import-stig-submit')).toBeDisabled()
+  })
+
+  test('library detail surfaces revision picker + rule table (M21c)', async ({
+    page,
+    request,
+  }) => {
+    // Make sure the SPA has rehydrated storageState so we can read
+    // the OIDC token from localStorage.
+    await page.goto(urls.web)
+    const token = await readAccessToken(page)
+
+    // Import the sample XCCDF fixture so the library has a benchmark
+    // we can point the detail page at. clobber=true keeps the test
+    // re-runnable against a dirty database.
+    const xccdfPath = join(
+      process.cwd(),
+      '..',
+      'api',
+      'internal',
+      'xccdf',
+      'testdata',
+      'sample.xccdf.xml',
+    )
+    const xccdf = readFileSync(xccdfPath)
+    const imp = await request.post(`${urls.api}/api/stigs?clobber=true`, {
+      headers: { Authorization: `Bearer ${token}` },
+      multipart: {
+        importFile: {
+          name: 'TEST_OS_STIG.xml',
+          mimeType: 'application/xml',
+          buffer: xccdf,
+        },
+      },
+    })
+    expect(imp.status(), await imp.text()).toBe(200)
+
+    await page.goto(`${urls.web}/library/TEST_OS_STIG`)
+    await expect(page.getByTestId('library-detail-page')).toBeVisible()
+    await expect(page.getByTestId('library-detail-heading')).toContainText(
+      'TEST_OS_STIG',
+    )
+
+    // The revision selector defaults to the latest imported revision.
+    const select = page.getByTestId('library-revision-select')
+    await expect(select).toBeVisible()
+    await expect(select).toHaveValue('V2R3')
+
+    // Rule table renders with at least one row (the fixture ships
+    // SV-100001 and SV-100002 in V2R3).
+    const table = page.getByTestId('library-rules-table')
+    await expect(table).toBeVisible({ timeout: 10_000 })
+    await expect(
+      page.locator('[data-testid="library-rule-row"]').first(),
+    ).toBeVisible()
+    const rowCount = await page
+      .locator('[data-testid="library-rule-row"]')
+      .count()
+    expect(rowCount).toBeGreaterThanOrEqual(1)
+
+    // Clicking a rule opens the detail panel via the existing
+    // /stigs/rules/{ruleId} lookup. The fixture has SV-100001r1_rule.
+    await page.locator('[data-testid="library-rule-row"]').first().click()
+    await expect(page.getByTestId('library-rule-detail-panel')).toBeVisible({
+      timeout: 10_000,
+    })
   })
 
   test('admin audit log page renders with table + filters (M19)', async ({
