@@ -345,6 +345,93 @@ test.describe('Web SPA', () => {
     ).toContainText('host-ckl-1')
   })
 
+  test('asset review workspace renders 3-pane layout and respects URL state (M23)', async ({
+    page,
+    request,
+  }) => {
+    // Make sure the SPA has rehydrated storageState so we can read
+    // the OIDC token for the API hops below.
+    await page.goto(urls.web)
+    const token = await readAccessToken(page)
+
+    // Import the sample XCCDF so TEST_OS_STIG/V2R3 exists in the
+    // library. The newly-created asset will be mapped to it via the
+    // create-asset form.
+    const xccdfPath = join(
+      process.cwd(),
+      '..',
+      'api',
+      'internal',
+      'xccdf',
+      'testdata',
+      'sample.xccdf.xml',
+    )
+    const xccdf = readFileSync(xccdfPath)
+    const imp = await request.post(`${urls.api}/api/stigs?clobber=true`, {
+      headers: { Authorization: `Bearer ${token}` },
+      multipart: {
+        importFile: {
+          name: 'TEST_OS_STIG.xml',
+          mimeType: 'application/xml',
+          buffer: xccdf,
+        },
+      },
+    })
+    expect(imp.status(), await imp.text()).toBe(200)
+
+    // Create a fresh collection.
+    await page.goto(`${urls.web}/collections`)
+    const collectionName = `e2e-workspace-coll-${Date.now()}`
+    await page.getByTestId('new-collection-button').click()
+    const cdialog = page.getByTestId('new-collection-dialog')
+    await cdialog.getByTestId('new-collection-name-input').fill(collectionName)
+    await cdialog.getByTestId('new-collection-submit').click()
+    await expect(page).toHaveURL(/\/collections\/\d+$/, { timeout: 10_000 })
+    const collectionId = page.url().match(/\/collections\/(\d+)/)?.[1]
+    expect(collectionId).toBeTruthy()
+
+    // Create an asset. The dialog's STIG checkbox is sourced from
+    // `useSTIGs()` (library-wide) so TEST_OS_STIG will be selectable
+    // once the import above completes.
+    await page.getByTestId('collection-tab-assets').click()
+    await page.getByTestId('new-asset-button').click()
+    const adialog = page.getByTestId('new-asset-dialog')
+    await adialog.getByTestId('asset-name-input').fill('e2e-workspace-host')
+    // Pick the STIG from the multi-select if available; otherwise the
+    // form will create the asset with no STIGs and the workspace will
+    // show the empty-STIGs state, which is still a valid smoke test.
+    const stigCheckbox = adialog.getByTestId('asset-stig-TEST_OS_STIG')
+    if (await stigCheckbox.isVisible().catch(() => false)) {
+      await stigCheckbox.check()
+    }
+    await adialog.getByTestId('new-asset-submit').click()
+    await expect(page).toHaveURL(/\/collections\/\d+\/assets\/\d+$/, {
+      timeout: 10_000,
+    })
+    const assetId = page.url().match(/\/assets\/(\d+)/)?.[1]
+    expect(assetId).toBeTruthy()
+
+    // Click the workspace CTA on the asset detail page.
+    const openWorkspace = page.getByTestId('asset-open-workspace')
+    await expect(openWorkspace).toBeVisible()
+    await openWorkspace.click()
+    await expect(page).toHaveURL(
+      new RegExp(`/collections/${collectionId}/assets/${assetId}/workspace`),
+    )
+
+    // Three panes are visible.
+    await expect(page.getByTestId('review-workspace')).toBeVisible()
+    await expect(page.getByTestId('workspace-rule-list')).toBeVisible()
+    await expect(page.getByTestId('workspace-rule-detail')).toBeVisible()
+    await expect(page.getByTestId('workspace-review-pane')).toBeVisible()
+    // STIG picker is visible regardless of whether anything was
+    // mapped.
+    await expect(page.getByTestId('workspace-stig-select')).toBeVisible()
+    // Search input gets focus when '/' is pressed.
+    await page.keyboard.press('/')
+    await expect(page.getByTestId('workspace-search')).toBeFocused()
+  })
+
   test('admin layout renders with the four tabs (M18f)', async ({ page }) => {
     await page.goto(`${urls.web}/admin/users`)
     await expect(page.getByTestId('admin-layout')).toBeVisible()
