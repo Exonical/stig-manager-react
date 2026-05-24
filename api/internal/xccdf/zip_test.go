@@ -160,3 +160,26 @@ func TestExtractBenchmarks_RawInvalidXML(t *testing.T) {
 		t.Errorf("want wrapped 'parse xccdf' error, got %v", err)
 	}
 }
+
+// TestExtractBenchmarks_OversizedEntry verifies that an entry whose
+// decompressed body would exceed the per-entry cap is rejected
+// without OOMing the process. We temporarily lower the cap to 1 KiB
+// so the test doesn't have to allocate hundreds of MiB.
+func TestExtractBenchmarks_OversizedEntry(t *testing.T) {
+	orig := maxDecompressedEntryBytes
+	t.Cleanup(func() { maxDecompressedEntryBytes = orig })
+	maxDecompressedEntryBytes = 1 << 10 // 1 KiB
+
+	// Highly-compressible body well above the lowered cap.
+	body := bytes.Repeat([]byte{'A'}, 4<<10)
+	payload := buildZip(t, map[string][]byte{
+		"U_Big_STIG_V1R1_Manual-xccdf.xml": body,
+	})
+	_, err := ExtractBenchmarks(payload)
+	if err == nil {
+		t.Fatalf("expected error for oversized entry")
+	}
+	if !strings.Contains(err.Error(), "decompressed cap") {
+		t.Errorf("want 'decompressed cap' error, got %v", err)
+	}
+}

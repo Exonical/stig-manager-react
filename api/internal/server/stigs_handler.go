@@ -2,7 +2,6 @@ package server
 
 import (
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -111,20 +110,28 @@ func (s APIServer) ImportBenchmark(w http.ResponseWriter, r *http.Request, param
 
 	clobber := params.Clobber != nil && *params.Clobber
 
-	imports := make([]api.RevisionPost, 0, len(extracted))
+	benches := make([]*xccdf.Benchmark, 0, len(extracted))
 	for _, ex := range extracted {
-		rev, err := s.Stigs.ImportRevision(r.Context(), ex.Benchmark, clobber)
-		if err != nil {
-			if errors.Is(err, store.ErrDuplicateName) {
-				writeAuthError(w, http.StatusBadRequest, fmt.Sprintf(
-					"revision %s for %s already exists; pass ?clobber=true to overwrite",
-					ex.Benchmark.RevisionStr(), ex.Benchmark.BenchmarkID))
-				return
-			}
-			s.logErr(r, "import revision", err)
-			writeAuthError(w, http.StatusInternalServerError, "failed to import revision: "+ex.Source)
+		benches = append(benches, ex.Benchmark)
+	}
+
+	// All benchmarks are committed in a single transaction so a late-
+	// stage failure (e.g. duplicate revision without clobber) cannot
+	// leave the database in a half-imported state.
+	revs, err := s.Stigs.ImportRevisions(r.Context(), benches, clobber)
+	if err != nil {
+		if errors.Is(err, store.ErrDuplicateName) {
+			writeAuthError(w, http.StatusBadRequest,
+				"one or more revisions already exist; pass ?clobber=true to overwrite")
 			return
 		}
+		s.logErr(r, "import revisions", err)
+		writeAuthError(w, http.StatusInternalServerError, "failed to import upload")
+		return
+	}
+
+	imports := make([]api.RevisionPost, 0, len(revs))
+	for _, rev := range revs {
 		action := api.RevisionPostAction("inserted")
 		bid := api.BenchmarkId(rev.BenchmarkID)
 		marking := api.RevisionMarkingNullable(rev.Marking)
