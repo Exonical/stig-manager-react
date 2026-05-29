@@ -147,7 +147,7 @@ export function CollectionsListPage() {
               >
                 <td className="px-4 py-2 font-medium">
                   <Link
-                    to={`/collections/${c.collectionId}`}
+                    to={`/collections/${c.collectionId}/workspace`}
                     className="text-sky-500 hover:underline"
                     data-testid={`collection-link-${c.collectionId}`}
                   >
@@ -158,7 +158,14 @@ export function CollectionsListPage() {
                   {c.description || '—'}
                 </td>
                 <td className="px-4 py-2 text-right font-mono text-xs text-[var(--color-muted-foreground)]">
-                  {c.collectionId}
+                  <Link
+                    to={`/collections/${c.collectionId}`}
+                    className="text-xs text-sky-500 hover:underline"
+                    data-testid={`collection-detail-link-${c.collectionId}`}
+                    title="Legacy tabbed detail page"
+                  >
+                    {c.collectionId}
+                  </Link>
                 </td>
               </tr>
             ))}
